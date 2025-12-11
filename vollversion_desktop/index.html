@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>redOS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- redOS Menüleiste oben -->
+  <nav class="menu-bar" id="menuBar">
+    <div class="menu-left">
+      <div class="redos-logo">🎮</div>
+      <div class="menu-item menu-redos" id="menuRedOS">redOS</div>
+    </div>
+    <div class="menu-center">
+      <div class="menu-item menu-dropdown" id="menuFile">Datei</div>
+      <div class="menu-item menu-dropdown" id="menuEdit">Bearbeiten</div>
+      <div class="menu-item menu-dropdown" id="menuView">Ansicht</div>
+      <div class="menu-item menu-dropdown" id="menuWindow">Fenster</div>
+      <div class="menu-item menu-dropdown" id="menuHelp">Hilfe</div>
+    </div>
+    <div class="menu-right">
+      <div class="menu-item reset-btn" id="resetBtn" title="System zurücksetzen">🔄</div>
+      <div class="menu-item clock-menu" id="clockMenu"></div>
+    </div>
+  </nav>
+
+  <!-- Desktop Hintergrund -->
+  <div class="desktop-background"></div>
+  
+  <!-- Desktop Shell -->
+  <main class="desktop-shell">
+    <div id="windowArea" class="window-area">
+      <!-- Desktop-Dateien werden hier dynamisch eingefügt -->
+    </div>
+  </main>
+
+  <!-- Fenster Template mit Traffic Lights -->
+  <template id="windowTemplate">
+    <article class="window">
+      <header class="window-head">
+        <div class="traffic-lights">
+          <button class="traffic-light traffic-light-close" title="Schließen">
+            <span class="traffic-light-icon"></span>
+          </button>
+          <button class="traffic-light traffic-light-minimize" title="Minimieren">
+            <span class="traffic-light-icon"></span>
+          </button>
+          <button class="traffic-light traffic-light-maximize" title="Vollbild">
+            <span class="traffic-light-icon"></span>
+          </button>
+        </div>
+        <div class="window-title">
+          <div class="title-line"></div>
+        </div>
+        <div class="window-actions">
+          <button class="window-refresh" title="Neu laden">↻</button>
+        </div>
+      </header>
+      <div class="window-body">
+        <iframe class="app-frame" loading="lazy" sandbox="allow-same-origin allow-scripts allow-forms allow-pointer-lock allow-popups allow-modals allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
+      </div>
+    </article>
+  </template>
+
+  <!-- Dock unten -->
+  <div class="dock" id="dock">
+    <div class="dock-container">
+      <!-- Apps werden hier eingefügt -->
+    </div>
+  </div>
+
+  <!-- Setup Overlay -->
+  <div class="setup-overlay" id="setupOverlay">
+    <div class="setup-container glass">
+      <div class="setup-step" id="setupStep1">
+        <div class="setup-icon">🎮</div>
+        <h1 class="setup-title">Willkommen bei redOS</h1>
+        <p class="setup-description">Lass uns dein System einrichten</p>
+        <button class="setup-btn primary" id="setupBtn1" type="button" onclick="window.setupNextStep && window.setupNextStep()">Weiter</button>
+      </div>
+      
+      <div class="setup-step hidden" id="setupStep2">
+        <div class="setup-icon">🔒</div>
+        <h1 class="setup-title">Passwort erstellen</h1>
+        <p class="setup-description">Erstelle ein sicheres Passwort für dein System</p>
+        <div class="setup-form">
+          <input type="password" id="passwordInput" class="setup-input" placeholder="Passwort eingeben" autocomplete="new-password">
+          <input type="password" id="passwordConfirm" class="setup-input" placeholder="Passwort bestätigen" autocomplete="new-password">
+          <div class="setup-error" id="passwordError"></div>
+        </div>
+        <div class="setup-buttons">
+          <button class="setup-btn ghost" id="setupBtnBack" type="button" onclick="window.setupPrevStep && window.setupPrevStep()">Zurück</button>
+          <button class="setup-btn primary" id="setupBtn2" type="button" onclick="window.setupCreatePassword && window.setupCreatePassword()">Weiter</button>
+        </div>
+      </div>
+      
+      <div class="setup-step hidden" id="setupStep3">
+        <div class="setup-icon">✨</div>
+        <h1 class="setup-title">Fertig!</h1>
+        <p class="setup-description">Dein System ist bereit</p>
+        <button class="setup-btn primary" id="setupBtn3" type="button" onclick="window.setupComplete && window.setupComplete()">Loslegen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

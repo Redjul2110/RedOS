@@ -1,0 +1,953 @@
+:root {
+  color-scheme: dark;
+  --redos-bg: #1d1d1f;
+  --redos-surface: rgba(255, 255, 255, 0.1);
+  --redos-surface-strong: rgba(255, 255, 255, 0.15);
+  --redos-border: rgba(255, 255, 255, 0.2);
+  --redos-text: #ffffff;
+  --redos-text-muted: rgba(255, 255, 255, 0.7);
+  --redos-accent: #007aff;
+  --redos-red: #ff3b30;
+  --redos-yellow: #ffcc00;
+  --redos-green: #34c759;
+  --redos-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --redos-shadow-large: 0 20px 60px rgba(0, 0, 0, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.muted {
+  color: var(--redos-text-muted);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--redos-bg);
+  color: var(--redos-text);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-top: 25px;
+  padding-bottom: 80px;
+}
+
+/* redOS Menüleiste */
+.menu-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 25px;
+  z-index: 1000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 12px;
+  background: rgba(30, 30, 30, 0.5);
+  backdrop-filter: blur(60px) saturate(200%) brightness(1.1);
+  -webkit-backdrop-filter: blur(60px) saturate(200%) brightness(1.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 20px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.menu-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  pointer-events: none;
+}
+
+.menu-left,
+.menu-center,
+.menu-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.menu-left {
+  gap: 8px;
+}
+
+.redos-logo {
+  font-size: 16px;
+  cursor: default;
+}
+
+.menu-item {
+  color: var(--redos-text);
+  cursor: default;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menu-dropdown {
+  cursor: pointer;
+  position: relative;
+}
+
+.menu-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 10001;
+  display: none;
+}
+
+.menu-dropdown-menu.show {
+  display: block;
+}
+
+.menu-dropdown-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  transition: background 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menu-dropdown-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.menu-dropdown-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 0;
+}
+
+.reset-btn {
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 8px;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.reset-btn:hover {
+  background: rgba(255, 59, 48, 0.2);
+  transform: rotate(180deg);
+}
+
+.clock-menu {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Desktop Hintergrund */
+.desktop-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(0, 122, 255, 0.15), transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(52, 199, 89, 0.1), transparent 50%),
+    var(--redos-bg);
+  background-attachment: fixed;
+}
+
+/* Desktop Shell */
+.desktop-shell {
+  flex: 1;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+
+.window-area {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  min-height: calc(100vh - 105px);
+}
+
+/* Desktop-Dateien */
+.desktop-file {
+  position: absolute;
+  width: 80px;
+  padding: 8px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 8px;
+  transition: background 0.2s ease, transform 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.desktop-file:hover {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.desktop-file.selected {
+  background: rgba(0, 122, 255, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.desktop-file-icon {
+  font-size: 48px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.desktop-file-label {
+  font-size: 11px;
+  color: white;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  word-break: break-word;
+  max-width: 100%;
+  line-height: 1.2;
+}
+
+/* redOS Fenster mit Glassmorphism */
+.window {
+  position: absolute;
+  width: 800px;
+  height: 600px;
+  min-width: 400px;
+  min-height: 300px;
+  background: rgba(20, 20, 25, 0.4);
+  backdrop-filter: blur(60px) saturate(200%) brightness(1.05);
+  -webkit-backdrop-filter: blur(60px) saturate(200%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 1px 0 rgba(255, 255, 255, 0.2) inset;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  resize: none;
+  transition: box-shadow 0.3s ease, transform 0.2s ease, backdrop-filter 0.3s ease;
+  z-index: 1;
+}
+
+.window::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.window::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: 
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.05), transparent 50%);
+  opacity: 0.8;
+  border-radius: 12px;
+  z-index: 1;
+}
+
+.window.focused {
+  background: rgba(25, 25, 30, 0.5);
+  backdrop-filter: blur(70px) saturate(220%) brightness(1.1);
+  -webkit-backdrop-filter: blur(70px) saturate(220%) brightness(1.1);
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 122, 255, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.15) inset,
+    0 1px 0 rgba(255, 255, 255, 0.25) inset;
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateZ(0);
+}
+
+.window.maximized {
+  border-radius: 0;
+  width: 100% !important;
+  height: 100% !important;
+  left: 0 !important;
+  top: 0 !important;
+}
+
+.window-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  cursor: grab;
+  height: 40px;
+  min-height: 40px;
+  user-select: none;
+  position: relative;
+  z-index: 3;
+}
+
+.window-head::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  pointer-events: none;
+}
+
+.window-head:active {
+  cursor: grabbing;
+}
+
+/* Fenster-Buttons */
+.traffic-lights {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: filter 0.2s ease;
+}
+
+.traffic-light-close {
+  background: var(--redos-red);
+}
+
+.traffic-light-minimize {
+  background: var(--redos-yellow);
+}
+
+.traffic-light-maximize {
+  background: var(--redos-green);
+}
+
+.traffic-light:hover {
+  filter: brightness(1.2);
+}
+
+.traffic-light-icon {
+  display: none;
+}
+
+.window-title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--redos-text);
+  pointer-events: none;
+}
+
+.title-line {
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.window-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.window-refresh {
+  background: transparent;
+  border: none;
+  color: var(--redos-text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.window-refresh:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--redos-text);
+}
+
+.window-body {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  position: relative;
+}
+
+.app-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+}
+
+.frame-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--redos-text);
+  text-align: center;
+  padding: 24px;
+  backdrop-filter: blur(10px);
+}
+
+.frame-fallback button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--redos-accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.frame-fallback button:hover {
+  background: #0051d5;
+}
+
+.browser-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.browser-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--redos-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.browser-input:focus {
+  outline: none;
+  border-color: var(--redos-accent);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.browser-go {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  background: var(--redos-accent);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.browser-go:hover {
+  background: #0051d5;
+}
+
+/* Datei-App */
+.file-app {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 16px;
+  height: 100%;
+  color: var(--redos-text);
+}
+
+.file-form {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  position: relative;
+}
+
+.file-form::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  pointer-events: none;
+  border-radius: 12px 12px 0 0;
+}
+
+.file-form h3 {
+  margin: 0;
+}
+
+.file-form input,
+.file-form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--redos-text);
+  font-family: inherit;
+}
+
+.file-form textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.file-form button {
+  align-self: flex-start;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--redos-accent);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.file-list {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 12px;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+}
+
+.file-card {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.file-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.file-card h4 {
+  margin: 0 0 6px 0;
+}
+
+.file-card p {
+  margin: 0;
+  color: var(--redos-text-muted);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, 0.1) 50%);
+}
+
+/* redOS Dock */
+.dock {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px;
+  z-index: 999;
+  padding: 8px;
+}
+
+.dock-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(20, 20, 25, 0.5);
+  backdrop-filter: blur(60px) saturate(200%) brightness(1.05);
+  -webkit-backdrop-filter: blur(60px) saturate(200%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 20px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 1px 0 rgba(255, 255, 255, 0.2) inset;
+  min-height: 60px;
+  position: relative;
+}
+
+.dock-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  pointer-events: none;
+  border-radius: 20px 20px 0 0;
+}
+
+.dock-item {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.dock-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.dock-item:hover {
+  transform: translateY(-8px) scale(1.15);
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(15px) saturate(180%);
+  -webkit-backdrop-filter: blur(15px) saturate(180%);
+  box-shadow: 
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.dock-item:hover::before {
+  opacity: 1;
+}
+
+.dock-item.active {
+  background: rgba(0, 122, 255, 0.3);
+  border-color: rgba(0, 122, 255, 0.5);
+}
+
+.dock-item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--dock-icon-bg, linear-gradient(135deg, #007aff, #5856d6));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 600;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.dock-item-label {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.dock-item:hover .dock-item-label {
+  opacity: 1;
+}
+
+/* Setup Overlay */
+.setup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.setup-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.setup-container {
+  width: 90%;
+  max-width: 500px;
+  padding: 48px;
+  border-radius: 20px;
+  text-align: center;
+}
+
+.glass {
+  background: rgba(20, 20, 25, 0.5);
+  backdrop-filter: blur(60px) saturate(200%) brightness(1.05);
+  -webkit-backdrop-filter: blur(60px) saturate(200%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 1px 0 rgba(255, 255, 255, 0.2) inset;
+  position: relative;
+}
+
+.glass::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  pointer-events: none;
+  border-radius: 20px 20px 0 0;
+}
+
+.setup-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.setup-step.hidden {
+  display: none;
+}
+
+.setup-icon {
+  font-size: 64px;
+  margin-bottom: 8px;
+}
+
+.setup-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--redos-text);
+  margin: 0;
+}
+
+.setup-description {
+  font-size: 16px;
+  color: var(--redos-text-muted);
+  margin: 0;
+}
+
+.setup-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.setup-input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--redos-text);
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.setup-input:focus {
+  outline: none;
+  border-color: var(--redos-accent);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.setup-input::placeholder {
+  color: var(--redos-text-muted);
+}
+
+.setup-error {
+  color: var(--redos-red);
+  font-size: 13px;
+  min-height: 20px;
+  text-align: left;
+}
+
+.setup-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.setup-btn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.setup-btn.primary {
+  background: var(--redos-accent);
+  color: white;
+}
+
+.setup-btn.primary:hover {
+  background: #0051d5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.4);
+}
+
+.setup-btn.ghost {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--redos-text);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.setup-btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Responsive */
+@media (max-width: 960px) {
+  .window {
+    width: calc(100% - 24px);
+    left: 12px !important;
+    right: 12px;
+  }
+  
+  .dock-container {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 90vw;
+  }
+  
+  .menu-center {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .setup-container {
+    padding: 32px 24px;
+  }
+  
+  .setup-title {
+    font-size: 24px;
+  }
+  
+  .dock-item {
+    width: 48px;
+    height: 48px;
+  }
+  
+  .dock-item-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+}

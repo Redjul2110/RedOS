@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Version Selector</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #1d1d1f;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #f5f5f7;
+        }
+        .container {
+            text-align: center;
+            background-color: #2d2d2f;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 30px;
+            color: #f5f5f7;
+        }
+        .menu {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .menu-item {
+            display: block;
+            padding: 16px 24px;
+            background-color: #007aff;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+        .menu-item:hover {
+            background-color: #0056cc;
+        }
+        .menu-item:active {
+            background-color: #004499;
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            .menu-item {
+                font-size: 16px;
+                padding: 14px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Select Version</h1>
+        <div class="menu">
+            <a href="vollversion_mobile/index.html" class="menu-item">Phone</a>
+            <a href="vollversion_desktop/index.html" class="menu-item">Desktop</a>
+        </div>
+    </div>
+</body>
+</html>
