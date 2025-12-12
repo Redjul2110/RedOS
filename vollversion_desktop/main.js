@@ -1,6 +1,6 @@
-// Global variables
+// Global variables 
 let currentFolderId = 'root';
-
+ 
 // Mobile device detection
 function isMobileDevice() {
   return (typeof window.orientation !== "undefined") || 
