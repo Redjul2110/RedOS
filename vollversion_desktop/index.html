@@ -10,6 +10,37 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Mobile Device Message -->
+  <div class="mobile-message" id="mobileMessage">
+    <h1>Nicht unterstützt</h1>
+    <p>Diese Anwendung ist für die Verwendung auf Desktop-Computern optimiert. Bitte öffnen Sie die Seite auf einem Computer oder Laptop.</p>
+    <p class="muted">(Device not supported - Please use a desktop computer)</p>
+  </div>
+
+  <div class="startup-overlay" id="startupOverlay">
+    <div class="startup-container">
+      <div class="startup-logo">🎮</div>
+      <div class="startup-title">redOS</div>
+      <div class="startup-subtitle">Wird gestartet…</div>
+      <div class="startup-progress">
+        <div class="startup-progress-bar" id="startupProgressBar"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="redos-dialog-overlay hidden" id="redosDialogOverlay">
+    <div class="redos-dialog glass" role="dialog" aria-modal="true" aria-labelledby="redosDialogTitle">
+      <div class="redos-dialog-header">
+        <div class="redos-dialog-title" id="redosDialogTitle">redOS</div>
+      </div>
+      <div class="redos-dialog-body">
+        <div class="redos-dialog-message" id="redosDialogMessage"></div>
+        <input class="setup-input redos-dialog-input hidden" id="redosDialogInput" type="text" autocomplete="off" />
+      </div>
+      <div class="redos-dialog-actions" id="redosDialogActions"></div>
+    </div>
+  </div>
+
   <!-- redOS Menüleiste oben -->
   <nav class="menu-bar" id="menuBar">
     <div class="menu-left">
@@ -67,6 +98,9 @@
     </article>
   </template>
 
+  <!-- Hover area for dock -->
+  <div class="dock-hover-area"></div>
+  
   <!-- Dock unten -->
   <div class="dock" id="dock">
     <div class="dock-container">
@@ -104,6 +138,35 @@
         <h1 class="setup-title">Fertig!</h1>
         <p class="setup-description">Dein System ist bereit</p>
         <button class="setup-btn primary" id="setupBtn3" type="button" onclick="window.setupComplete && window.setupComplete()">Loslegen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tutorial-prompt-overlay hidden" id="tutorialPromptOverlay">
+    <div class="tutorial-prompt-container glass">
+      <div class="setup-icon">❓</div>
+      <h1 class="setup-title">Möchtest du eine Erklärung?</h1>
+      <p class="setup-description">Ich zeige dir kurz die wichtigsten Funktionen von redOS.</p>
+      <div class="setup-buttons">
+        <button class="setup-btn ghost" id="tutorialPromptNo" type="button">Nein</button>
+        <button class="setup-btn primary" id="tutorialPromptYes" type="button">Ja</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tutorial-overlay hidden" id="tutorialOverlay">
+    <div class="tutorial-container glass">
+      <div class="tutorial-header">
+        <div class="tutorial-title" id="tutorialTitle">Tutorial</div>
+        <button class="setup-btn ghost" id="tutorialClose" type="button">Beenden</button>
+      </div>
+      <div class="tutorial-body">
+        <div class="tutorial-text" id="tutorialText"></div>
+        <div class="tutorial-progress" id="tutorialProgress"></div>
+      </div>
+      <div class="tutorial-actions">
+        <button class="setup-btn ghost" id="tutorialPrev" type="button">Zurück</button>
+        <button class="setup-btn primary" id="tutorialNext" type="button">Weiter</button>
       </div>
     </div>
   </div>
