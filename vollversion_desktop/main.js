@@ -119,7 +119,24 @@ function redosPrompt(message, { title = 'Eingabe', placeholder = '', value = '' 
   }).then(v => (typeof v === 'string' ? v : null));
 }
 
+function shouldSkipContextMenu(e, kind, id) {
+  if (typeof state === 'undefined') return false;
+  try {
+    const now = Date.now();
+    const key = `${String(kind || '')}|${String(id || '')}|${e?.clientX ?? ''}|${e?.clientY ?? ''}`;
+    if (state._lastContextMenuKey === key && now - (state._lastContextMenuTs || 0) < 140) {
+      return true;
+    }
+    state._lastContextMenuKey = key;
+    state._lastContextMenuTs = now;
+  } catch (err) {
+    return false;
+  }
+  return false;
+}
+
 function showBackgroundContextMenu(e, context) {
+  if (shouldSkipContextMenu(e, 'background', context)) return;
   document.querySelectorAll('.context-menu').forEach(menu => menu.remove());
 
   const menu = document.createElement('div');
@@ -212,9 +229,12 @@ function showBackgroundContextMenu(e, context) {
   }
   document.body.append(menu);
 
+  // Close menu when clicking outside
   setTimeout(() => {
     const closeMenu = (ev) => {
-      if (typeof ev.button === 'number' && ev.button === 2) return;
+      const isContextClick = (typeof ev.button === 'number' && ev.button === 2) ||
+        (typeof ev.button === 'number' && ev.button === 0 && (ev.ctrlKey || ev.metaKey));
+      if (isContextClick) return;
       if (!menu.contains(ev.target)) {
         menu.remove();
         document.removeEventListener('mousedown', closeMenu, true);
@@ -237,6 +257,29 @@ function renderSettingsApp(body) {
   const section = document.createElement('div');
   section.style.cssText = 'display: grid; gap: 10px;';
 
+  const defaultRow = document.createElement('div');
+  defaultRow.style.cssText = 'display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08);';
+  const defaultTitle = document.createElement('div');
+  defaultTitle.textContent = 'Standard-App (Doppelklick auf Datei)';
+  defaultTitle.style.cssText = 'font-weight: 600; font-size: 13px;';
+  const defaultSelect = document.createElement('select');
+  defaultSelect.style.cssText = 'padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(0,0,0,0.25); color: white;';
+  defaultSelect.innerHTML = `
+    <option value="editor">Editor</option>
+    <option value="coder">Coder</option>
+    <option value="files">Dateien (Dialog)</option>
+  `;
+  try {
+    defaultSelect.value = localStorage.getItem('default_open_app') || 'editor';
+  } catch (e) {
+    defaultSelect.value = 'editor';
+  }
+  defaultSelect.addEventListener('change', () => {
+    try { localStorage.setItem('default_open_app', defaultSelect.value); } catch (e) { /* ignore */ }
+    showNotification('Gespeichert');
+  });
+  defaultRow.append(defaultTitle, defaultSelect);
+
   const mkBtn = (label, onClick) => {
     const btn = document.createElement('button');
     btn.textContent = label;
@@ -248,6 +291,7 @@ function renderSettingsApp(body) {
   };
 
   section.append(
+    defaultRow,
     mkBtn('Desktop-Icons leeren', () => {
       try {
         localStorage.removeItem(DESKTOP_FILES_KEY);
@@ -277,9 +321,467 @@ function renderSettingsApp(body) {
   body.append(wrap);
 }
 
+function openFileWithApp(file, appId) {
+  const id = appId || (localStorage.getItem('default_open_app') || 'editor');
+  if (id === 'files') {
+    if (window.redosFiles && typeof window.redosFiles.openDialog === 'function') {
+      window.redosFiles.openDialog({ mode: 'file', title: 'Datei bearbeiten', entry: file });
+    } else {
+      openFileInEditor(file);
+    }
+    return;
+  }
+
+  const isDesktopEntry = !!file?.id && String(file.id).startsWith('desktop-file-');
+  if (isDesktopEntry && file.linkedFileId) {
+    const filesAll = loadFiles();
+    const linked = filesAll.find(f => f.id === file.linkedFileId);
+    if (linked) {
+      state.openTarget = { appId: id, file: linked, originalDesktopId: file.id };
+      const app = apps.find(a => a.id === id);
+      if (app) openApp(app);
+      return;
+    }
+  }
+
+  state.openTarget = { appId: id, file, originalDesktopId: isDesktopEntry ? file.id : null };
+  const app = apps.find(a => a.id === id);
+  if (app) openApp(app);
+}
+
+function openFolderAsCoderProject(folder, isDesktopEntry) {
+  if (!folder || !folder.isFolder) return;
+  const rootId = isDesktopEntry ? (folder.linkedFolderId || null) : folder.id;
+  if (!rootId) return;
+  state.openTarget = { appId: 'coder', projectRootId: rootId };
+  const app = apps.find(a => a.id === 'coder');
+  if (app) openApp(app);
+}
+
+function renderEditorApp(body, initial) {
+  body.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px; color: white;';
+
+  const header = document.createElement('div');
+  header.style.cssText = 'display: flex; gap: 10px; align-items: center;';
+  const name = document.createElement('div');
+  name.style.cssText = 'flex: 1; font-weight: 700;';
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Speichern';
+  saveBtn.style.cssText = 'padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: white; cursor: pointer;';
+  const downloadBtn = document.createElement('button');
+  downloadBtn.textContent = 'Download';
+  downloadBtn.style.cssText = saveBtn.style.cssText;
+
+  const textarea = document.createElement('textarea');
+  textarea.style.cssText = 'flex: 1; width: 100%; resize: none; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.25); color: white; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; line-height: 1.4;';
+
+  let current = initial && typeof initial === 'object' ? { ...initial } : null;
+  name.textContent = current?.name || 'Unbenannt';
+  textarea.value = current?.content || '';
+
+  saveBtn.onclick = () => {
+    const content = textarea.value;
+    if (current?.id && !String(current.id).startsWith('desktop-file-')) {
+      const files = loadFiles();
+      const idx = files.findIndex(f => f.id === current.id);
+      if (idx >= 0) {
+        files[idx].content = content;
+        files[idx].updatedAt = new Date().toISOString();
+        saveFiles(files);
+        if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+        showNotification('Gespeichert');
+        return;
+      }
+    }
+
+    if (String(current?.id || '').startsWith('desktop-file-')) {
+      const desktopFiles = loadDesktopFiles();
+      const didx = desktopFiles.findIndex(f => f.id === current.id);
+      if (didx >= 0) {
+        desktopFiles[didx].content = content;
+        saveDesktopFiles(desktopFiles);
+        renderDesktopFiles();
+        showNotification('Gespeichert');
+        return;
+      }
+    }
+
+    showNotification('Nicht gespeichert');
+  };
+
+  downloadBtn.onclick = () => {
+    const blob = new Blob([textarea.value], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (current?.name || 'datei.txt');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 500);
+  };
+
+  header.append(name, saveBtn, downloadBtn);
+  wrap.append(header, textarea);
+  body.append(wrap);
+}
+
+function renderCoderApp(body, initial) {
+  body.innerHTML = '';
+  const target = initial && typeof initial === 'object' ? initial : {};
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'height: 100%; display: flex; flex-direction: column; background: rgba(0,0,0,0.12); color: white;';
+
+  const topbar = document.createElement('div');
+  topbar.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.12); background: rgba(20,20,25,0.35);';
+  const title = document.createElement('div');
+  title.style.cssText = 'flex: 1; font-weight: 700; font-size: 13px; opacity: 0.95;';
+
+  const btnStyle = 'padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: white; cursor: pointer; font-size: 12px;';
+  const runBtn = document.createElement('button');
+  runBtn.textContent = 'Run';
+  runBtn.style.cssText = btnStyle;
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style.cssText = btnStyle;
+  const downloadBtn = document.createElement('button');
+  downloadBtn.textContent = 'Download';
+  downloadBtn.style.cssText = btnStyle;
+  const upload = document.createElement('input');
+  upload.type = 'file';
+  upload.style.cssText = 'max-width: 240px;';
+
+  const contentRow = document.createElement('div');
+  contentRow.style.cssText = 'flex: 1; display: flex; min-height: 0;';
+  const sidebar = document.createElement('div');
+  sidebar.style.cssText = 'width: 240px; border-right: 1px solid rgba(255,255,255,0.10); background: rgba(0,0,0,0.18); padding: 10px; overflow: auto;';
+  const editorCol = document.createElement('div');
+  editorCol.style.cssText = 'flex: 1; display: flex; flex-direction: column; min-width: 0;';
+
+  const tabs = document.createElement('div');
+  tabs.style.cssText = 'display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.10); background: rgba(0,0,0,0.18); overflow: auto;';
+  const textarea = document.createElement('textarea');
+  textarea.style.cssText = 'flex: 1; width: 100%; resize: none; padding: 12px; border: none; outline: none; background: rgba(0,0,0,0.28); color: white; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; line-height: 1.45;';
+
+  const filesAll = loadFiles();
+  const projectRootId = target.projectRootId || null;
+  let selectedFolderId = projectRootId;
+  let current = null;
+  let openTabs = [];
+  let activeId = null;
+  const originalDesktopId = target.originalDesktopId || null;
+
+  function getChildren(parentId) {
+    return filesAll.filter(f => (f.parentId || null) === (parentId || null));
+  }
+
+  function inferExt(name) {
+    const n = String(name || '').toLowerCase();
+    const i = n.lastIndexOf('.');
+    return i >= 0 ? n.slice(i + 1) : '';
+  }
+
+  function runContent(fileName, code) {
+    const ext = inferExt(fileName);
+    let html = '';
+    if (ext === 'html' || ext === 'htm') {
+      html = String(code || '');
+    } else if (ext === 'js') {
+      html = `<!doctype html><html><head><meta charset="utf-8"></head><body><script>${String(code || '')}</script></body></html>`;
+    } else if (ext === 'css') {
+      html = `<!doctype html><html><head><meta charset="utf-8"><style>${String(code || '')}</style></head><body></body></html>`;
+    } else {
+      const safe = String(code || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      html = `<!doctype html><html><head><meta charset="utf-8"></head><body><pre>${safe}</pre></body></html>`;
+    }
+    const w = window.open();
+    if (w && w.document) {
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    }
+  }
+
+  function setActiveTab(id) {
+    const entry = openTabs.find(t => t.id === id);
+    if (!entry) return;
+    activeId = id;
+    current = entry;
+    textarea.value = entry.content || '';
+    title.textContent = `Coder — ${entry.name || ''}`;
+    renderTabs();
+  }
+
+  function openFileById(id) {
+    const f = filesAll.find(x => x.id === id);
+    if (!f || f.isFolder) return;
+    const existing = openTabs.find(t => t.id === f.id);
+    if (!existing) {
+      openTabs.push({ id: f.id, name: f.name, content: f.content || '' });
+    }
+    setActiveTab(f.id);
+  }
+
+  function ensureFolderByName(parentId, name) {
+    const existing = filesAll.find(f => f.isFolder && (f.parentId || null) === (parentId || null) && f.name === name);
+    if (existing) return existing;
+    const now = new Date().toISOString();
+    const folder = {
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name,
+      content: '',
+      isFolder: true,
+      parentId: parentId || 'root',
+      createdAt: now,
+      updatedAt: now
+    };
+    filesAll.push(folder);
+    return folder;
+  }
+
+  function createEntryAt(parentId, name, isFolder) {
+    const now = new Date().toISOString();
+    const entry = {
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      name,
+      content: isFolder ? '' : '',
+      isFolder: !!isFolder,
+      parentId: parentId || 'root',
+      createdAt: now,
+      updatedAt: now
+    };
+    filesAll.push(entry);
+    saveFiles(filesAll);
+    if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+    return entry;
+  }
+
+  async function createInProject(isFolder) {
+    if (!projectRootId) {
+      showNotification('Kein Projekt geöffnet');
+      return;
+    }
+    if (!selectedFolderId) selectedFolderId = projectRootId;
+
+    const label = isFolder ? 'Ordnername' : 'Dateiname';
+    const placeholder = isFolder ? 'z.B. src' : 'z.B. index.js';
+    const raw = await redosPrompt(label, { title: isFolder ? 'Neuer Ordner' : 'Neue Datei', placeholder });
+    const name = (raw || '').trim();
+    if (!name) return;
+
+    const parts = name.split('/').map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+
+    let parentId = selectedFolderId;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const folder = ensureFolderByName(parentId, parts[i]);
+      parentId = folder.id;
+    }
+
+    const baseName = parts[parts.length - 1];
+    const entry = createEntryAt(parentId, baseName, isFolder);
+    if (entry.isFolder) {
+      selectedFolderId = entry.id;
+      renderTree();
+      showNotification('Ordner erstellt');
+      return;
+    }
+
+    renderTree();
+    openFileById(entry.id);
+    showNotification('Datei erstellt');
+  }
+
+  function renderTabs() {
+    tabs.innerHTML = '';
+    openTabs.forEach(t => {
+      const tab = document.createElement('div');
+      tab.style.cssText = `display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: ${t.id === activeId ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)'}; cursor:pointer; white-space: nowrap;`;
+      const label = document.createElement('div');
+      label.textContent = t.name;
+      label.style.cssText = 'font-size: 12px;';
+      tab.onclick = () => setActiveTab(t.id);
+      tab.append(label);
+      tabs.append(tab);
+    });
+    if (openTabs.length === 0) {
+      const hint = document.createElement('div');
+      hint.textContent = projectRootId ? 'Datei links auswählen…' : 'Datei öffnen (Upload) oder per Kontextmenü starten…';
+      hint.style.cssText = 'opacity: 0.7; font-size: 12px; padding: 2px 4px;';
+      tabs.append(hint);
+    }
+  }
+
+  function renderTree() {
+    sidebar.innerHTML = '';
+    if (!projectRootId) {
+      const empty = document.createElement('div');
+      empty.textContent = 'Kein Projekt geöffnet';
+      empty.style.cssText = 'opacity: 0.7; font-size: 12px;';
+      sidebar.append(empty);
+      return;
+    }
+
+    if (!selectedFolderId) selectedFolderId = projectRootId;
+
+    const root = filesAll.find(f => f.id === projectRootId);
+    const rootName = root?.name || 'Projekt';
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex; align-items:center; justify-content: space-between; gap: 8px; margin: 0 0 8px 0;';
+    const rootTitle = document.createElement('div');
+    rootTitle.textContent = rootName;
+    rootTitle.style.cssText = 'font-weight: 800; font-size: 12px; opacity: 0.95; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;';
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex; gap:6px;';
+    const mkSmallBtn = (label, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.style.cssText = 'padding: 5px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.08); color: white; cursor: pointer; font-size: 12px; line-height: 1;';
+      b.onclick = onClick;
+      return b;
+    };
+    const newFileBtn = mkSmallBtn('+ Datei', () => createInProject(false));
+    const newFolderBtn = mkSmallBtn('+ Ordner', () => createInProject(true));
+    actions.append(newFileBtn, newFolderBtn);
+    header.append(rootTitle, actions);
+    sidebar.append(header);
+
+    const makeNode = (entry, depth) => {
+      const row = document.createElement('div');
+      row.style.cssText = `display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius: 8px; cursor: pointer; margin-left: ${depth * 10}px; background: ${entry.isFolder && entry.id === selectedFolderId ? 'rgba(255,255,255,0.10)' : 'transparent'};`;
+      let isHover = false;
+      const updateBg = () => {
+        if (isHover) {
+          row.style.background = 'rgba(255,255,255,0.06)';
+          return;
+        }
+        row.style.background = entry.isFolder && entry.id === selectedFolderId
+          ? 'rgba(255,255,255,0.10)'
+          : 'transparent';
+      };
+      row.addEventListener('mouseenter', () => {
+        isHover = true;
+        updateBg();
+      });
+      row.addEventListener('mouseleave', () => {
+        isHover = false;
+        updateBg();
+      });
+      const ico = document.createElement('div');
+      ico.textContent = entry.isFolder ? '📁' : '📄';
+      const lab = document.createElement('div');
+      lab.textContent = entry.name;
+      lab.style.cssText = 'font-size: 12px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;';
+      row.append(ico, lab);
+      row.onclick = () => {
+        if (entry.isFolder) {
+          selectedFolderId = entry.id;
+          renderTree();
+          return;
+        }
+        openFileById(entry.id);
+      };
+      sidebar.append(row);
+
+      if (entry.isFolder) {
+        getChildren(entry.id)
+          .slice()
+          .sort((a, b) => (a.isFolder === b.isFolder ? String(a.name).localeCompare(String(b.name)) : (a.isFolder ? -1 : 1)))
+          .forEach(child => makeNode(child, depth + 1));
+      }
+    };
+
+    makeNode(root || { id: projectRootId, name: rootName, isFolder: true }, 0);
+  }
+
+  // Initial state
+  if (target.file && target.file.id) {
+    current = { id: target.file.id, name: target.file.name, content: target.file.content || '' };
+    openTabs = [current];
+    activeId = current.id;
+    textarea.value = current.content || '';
+  }
+  title.textContent = current?.name ? `Coder — ${current.name}` : 'Coder';
+
+  textarea.addEventListener('input', () => {
+    if (!current) return;
+    current.content = textarea.value;
+    const tab = openTabs.find(t => t.id === current.id);
+    if (tab) tab.content = current.content;
+  });
+
+  upload.addEventListener('change', () => {
+    const f = upload.files && upload.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || '');
+      const tmpId = `upload-${Date.now()}`;
+      openTabs.push({ id: tmpId, name: f.name, content });
+      setActiveTab(tmpId);
+      showNotification('Geladen');
+    };
+    reader.readAsText(f);
+  });
+
+  saveBtn.onclick = () => {
+    if (!current) return;
+    const content = textarea.value;
+    const idx = filesAll.findIndex(f => f.id === current.id);
+    if (idx >= 0) {
+      filesAll[idx].content = content;
+      filesAll[idx].updatedAt = new Date().toISOString();
+      saveFiles(filesAll);
+      if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+      showNotification('Gespeichert');
+      return;
+    }
+
+    if (originalDesktopId && String(originalDesktopId).startsWith('desktop-file-')) {
+      const desktopFiles = loadDesktopFiles();
+      const didx = desktopFiles.findIndex(f => f.id === originalDesktopId);
+      if (didx >= 0) {
+        desktopFiles[didx].content = content;
+        saveDesktopFiles(desktopFiles);
+        renderDesktopFiles();
+        showNotification('Gespeichert');
+        return;
+      }
+    }
+
+    showNotification('Nicht gespeichert');
+  };
+
+  downloadBtn.onclick = () => {
+    if (!current) return;
+    const blob = new Blob([textarea.value], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (current?.name || 'code.txt');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 500);
+  };
+
+  runBtn.onclick = () => {
+    if (!current) return;
+    runContent(current.name, textarea.value);
+  };
+
+  topbar.append(title, runBtn, saveBtn, downloadBtn, upload);
+  editorCol.append(tabs, textarea);
+  contentRow.append(sidebar, editorCol);
+  wrap.append(topbar, contentRow);
+  body.append(wrap);
+  renderTree();
+  renderTabs();
+}
+
 // Show mobile message if on mobile device
 if (isMobileDevice()) {
-  document.getElementById('mobileMessage').style.display = 'flex';
+  const mobileMessage = document.getElementById('mobileMessage');
+  if (mobileMessage) mobileMessage.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 }
 
@@ -299,6 +801,22 @@ const apps = [
     desc: 'Systemeinstellungen',
     color: 'linear-gradient(135deg, #64748b, #334155)',
     icon: '⚙️'
+  },
+  {
+    id: 'editor',
+    name: 'Editor',
+    url: '',
+    desc: 'Text bearbeiten',
+    color: 'linear-gradient(135deg, #22c55e, #16a34a)',
+    icon: '📝'
+  },
+  {
+    id: 'coder',
+    name: 'Coder',
+    url: '',
+    desc: 'Code schreiben (HTML/CSS/JS)',
+    color: 'linear-gradient(135deg, #a855f7, #6366f1)',
+    icon: '💻'
   },
   {
     id: 'jumper-netlify',
@@ -388,7 +906,9 @@ const state = {
   setupStep: 1,
   desktopFiles: [],
   clipboard: null,
-  selectedFiles: new Set()
+  selectedFiles: new Set(),
+  _lastContextMenuTs: 0,
+  _lastContextMenuKey: ''
 };
 
 const windowArea = document.getElementById('windowArea');
@@ -441,6 +961,79 @@ function checkSetup() {
     showSetup();
   } else {
     hideSetup();
+  }
+}
+
+async function renameEntry(file, isDesktopEntry) {
+  const currentName = typeof file?.name === 'string' ? file.name : '';
+  const newNameRaw = await redosPrompt('Neuer Name', { title: 'Umbenennen', value: currentName });
+  const newName = (newNameRaw || '').trim();
+  if (!newName || newName === currentName) return;
+
+  if (isDesktopEntry) {
+    const desktopFiles = loadDesktopFiles();
+    const idx = desktopFiles.findIndex(f => f.id === file.id);
+    if (idx >= 0) {
+      desktopFiles[idx].name = newName;
+      saveDesktopFiles(desktopFiles);
+      state.desktopFiles = desktopFiles;
+      renderDesktopFiles();
+    }
+
+    if (file?.isFolder && file.linkedFolderId) {
+      const filesAll = loadFiles();
+      const fIdx = filesAll.findIndex(f => f.id === file.linkedFolderId);
+      if (fIdx >= 0) {
+        filesAll[fIdx].name = newName;
+        filesAll[fIdx].updatedAt = new Date().toISOString();
+        saveFiles(filesAll);
+        if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+      }
+    }
+
+    if (!file?.isFolder && file.linkedFileId) {
+      const filesAll = loadFiles();
+      const fIdx = filesAll.findIndex(f => f.id === file.linkedFileId);
+      if (fIdx >= 0) {
+        filesAll[fIdx].name = newName;
+        filesAll[fIdx].updatedAt = new Date().toISOString();
+        saveFiles(filesAll);
+        if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+      }
+    }
+
+    showNotification('Umbenannt');
+    return;
+  }
+
+  const filesAll = loadFiles();
+  const fIdx = filesAll.findIndex(f => f.id === file.id);
+  if (fIdx >= 0) {
+    const isFolder = !!filesAll[fIdx].isFolder;
+    filesAll[fIdx].name = newName;
+    filesAll[fIdx].updatedAt = new Date().toISOString();
+    saveFiles(filesAll);
+    if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+
+    const desktopFiles = loadDesktopFiles();
+    let changed = false;
+    desktopFiles.forEach(df => {
+      if (isFolder && df.linkedFolderId === file.id) {
+        df.name = newName;
+        changed = true;
+      }
+      if (!isFolder && df.linkedFileId === file.id) {
+        df.name = newName;
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveDesktopFiles(desktopFiles);
+      state.desktopFiles = desktopFiles;
+      renderDesktopFiles();
+    }
+
+    showNotification('Umbenannt');
   }
 }
 
@@ -597,7 +1190,7 @@ function startTutorial() {
   const steps = [
     {
       title: 'Willkommen',
-      text: 'Willkommen bei redOS! Ich zeige dir jetzt kurz die wichtigsten Funktionen.'
+      text: 'Willkommen bei redOS! Ich zeige dir jetzt kurz die wichtigsten Funktionen. Hinweis: Das OS hat noch viele Fehler und ist in Entwicklung.'
     },
     {
       title: 'Desktop Rechtsklick',
@@ -786,8 +1379,17 @@ function renderDesktopFiles() {
         }
         return;
       }
-      openFileInEditor(file);
+      openFileWithApp(file);
     });
+
+    // Rechtsklick Fallback (manche Browser/Trackpads)
+    fileEl.addEventListener('mousedown', (e) => {
+      const isContextClick = e.button === 2 || (e.button === 0 && (e.ctrlKey || e.metaKey));
+      if (!isContextClick) return;
+      e.preventDefault();
+      e.stopPropagation();
+      showFileContextMenu(e, file);
+    }, true);
     
     // Drag & Drop
     applyDesktopFileDraggable(fileEl, file);
@@ -901,13 +1503,44 @@ function applyDesktopFileDraggable(fileEl, file) {
         const folderId = folderEl.dataset.fileId;
         const desktopFiles = loadDesktopFiles();
         const folder = desktopFiles.find(f => f.id === folderId);
-        if (folder?.isFolder && folder.linkedFolderId && file.linkedFileId) {
-          const files = loadFiles();
-          const moving = files.find(f => f.id === file.linkedFileId);
-          if (moving) {
-            moving.parentId = folder.linkedFolderId;
-            moving.updatedAt = new Date().toISOString();
-            saveFiles(files);
+        if (folder?.isFolder) {
+          const filesAll = loadFiles();
+
+          let targetFolderId = folder.linkedFolderId;
+          if (!targetFolderId) {
+            const created = createNewFile(folder.name, '', true, 'root');
+            targetFolderId = created?.id;
+            const idx = desktopFiles.findIndex(f => f.id === folder.id);
+            if (idx >= 0) {
+              desktopFiles[idx].linkedFolderId = targetFolderId;
+              saveDesktopFiles(desktopFiles);
+            }
+          }
+
+          if (targetFolderId) {
+            if (file.isFolder) {
+              if (file.linkedFolderId) {
+                const movingFolder = filesAll.find(f => f.id === file.linkedFolderId);
+                if (movingFolder) {
+                  movingFolder.parentId = targetFolderId;
+                  movingFolder.updatedAt = new Date().toISOString();
+                }
+              } else {
+                createNewFile(file.name, '', true, targetFolderId);
+              }
+            } else {
+              if (file.linkedFileId) {
+                const movingFile = filesAll.find(f => f.id === file.linkedFileId);
+                if (movingFile) {
+                  movingFile.parentId = targetFolderId;
+                  movingFile.updatedAt = new Date().toISOString();
+                }
+              } else {
+                createNewFile(file.name, file.content || '', false, targetFolderId);
+              }
+            }
+
+            saveFiles(filesAll);
             deleteDesktopFile(file.id);
             showNotification('Verschoben');
           }
@@ -950,6 +1583,7 @@ function openFileInEditor(file) {
 }
 
 function showFileContextMenu(e, file) {
+  if (shouldSkipContextMenu(e, 'file', file?.id || file?.name)) return;
   // Remove any existing context menus
   document.querySelectorAll('.context-menu').forEach(menu => menu.remove());
 
@@ -973,7 +1607,61 @@ function showFileContextMenu(e, file) {
   openItem.className = 'context-menu-item';
   openItem.innerHTML = '<i>📂</i> <span>Öffnen</span>';
   openItem.onclick = () => {
-    openFileInEditor(file);
+    if (file.isFolder) {
+      const filesApp = apps.find(a => a.id === 'files');
+      if (filesApp) {
+        openApp(filesApp);
+        setTimeout(() => {
+          if (window.redosFiles && typeof window.redosFiles.navigateToFolderId === 'function') {
+            const folderId = isDesktopEntry ? (file.linkedFolderId || null) : file.id;
+            if (folderId) window.redosFiles.navigateToFolderId(folderId);
+          }
+        }, 150);
+      }
+    } else {
+      openFileWithApp(file);
+    }
+    menu.remove();
+  };
+
+  const openWithEditorItem = document.createElement('div');
+  openWithEditorItem.className = 'context-menu-item';
+  openWithEditorItem.innerHTML = '<i>📝</i> <span>Mit Editor öffnen</span>';
+  openWithEditorItem.onclick = () => {
+    if (!file.isFolder) openFileWithApp(file, 'editor');
+    menu.remove();
+  };
+
+  const openWithCoderItem = document.createElement('div');
+  openWithCoderItem.className = 'context-menu-item';
+  openWithCoderItem.innerHTML = '<i>💻</i> <span>Mit Coder öffnen</span>';
+  openWithCoderItem.onclick = () => {
+    if (file.isFolder) {
+      openFolderAsCoderProject(file, isDesktopEntry);
+    } else {
+      openFileWithApp(file, 'coder');
+    }
+    menu.remove();
+  };
+
+  const openWithFilesItem = document.createElement('div');
+  openWithFilesItem.className = 'context-menu-item';
+  openWithFilesItem.innerHTML = '<i>📁</i> <span>Mit Dateien-Explorer öffnen</span>';
+  openWithFilesItem.onclick = () => {
+    if (file.isFolder) {
+      const filesApp = apps.find(a => a.id === 'files');
+      if (filesApp) {
+        openApp(filesApp);
+        setTimeout(() => {
+          if (window.redosFiles && typeof window.redosFiles.navigateToFolderId === 'function') {
+            const folderId = isDesktopEntry ? (file.linkedFolderId || null) : file.id;
+            if (folderId) window.redosFiles.navigateToFolderId(folderId);
+          }
+        }, 150);
+      }
+    } else {
+      openFileWithApp(file, 'files');
+    }
     menu.remove();
   };
   
@@ -991,10 +1679,77 @@ function showFileContextMenu(e, file) {
     menu.remove();
   };
 
+  const renameItem = document.createElement('div');
+  renameItem.className = 'context-menu-item';
+  renameItem.innerHTML = '<i>✏️</i> <span>Umbenennen</span>';
+  renameItem.onclick = async () => {
+    const oldName = file?.name || '';
+    const next = await redosPrompt('Neuer Name', {
+      title: 'Umbenennen',
+      placeholder: oldName || 'Neuer Name',
+      value: oldName
+    });
+    const newName = (next || '').trim();
+    if (!newName || newName === oldName) {
+      menu.remove();
+      return;
+    }
+
+    if (isDesktopEntry) {
+      const desktopFiles = loadDesktopFiles();
+      const desktopItem = desktopFiles.find(f => f.id === file.id);
+      if (desktopItem) {
+        desktopItem.name = newName;
+        saveDesktopFiles(desktopFiles);
+        renderDesktopFiles();
+      }
+
+      const linkedId = file.linkedFileId || file.linkedFolderId;
+      if (linkedId) {
+        const filesAll = loadFiles();
+        const linked = filesAll.find(f => f.id === linkedId);
+        if (linked) {
+          linked.name = newName;
+          linked.updatedAt = new Date().toISOString();
+          saveFiles(filesAll);
+          if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+        }
+      }
+
+      showNotification(`"${oldName}" umbenannt`);
+      menu.remove();
+      return;
+    }
+
+    const files = loadFiles();
+    const target = files.find(f => f.id === file.id) || files.find(f => f.name === file.name);
+    if (!target) {
+      menu.remove();
+      return;
+    }
+    target.name = newName;
+    target.updatedAt = new Date().toISOString();
+    saveFiles(files);
+    if (window.redosFiles && typeof window.redosFiles.refresh === 'function') {
+      window.redosFiles.refresh();
+    } else {
+      const fileGrid = document.querySelector('.file-grid');
+      if (fileGrid) {
+        const fileItem = Array.from(fileGrid.querySelectorAll('.file-item')).find(
+          item => item.dataset.fileId === (target.id || '')
+        );
+        const nameEl = fileItem ? fileItem.querySelector('.file-name') : null;
+        if (nameEl) nameEl.textContent = newName;
+      }
+    }
+    showNotification(`"${oldName}" umbenannt`);
+    menu.remove();
+  };
+
   // Add to desktop option (only for file-manager entries)
   const addToDesktopItem = document.createElement('div');
   addToDesktopItem.className = 'context-menu-item';
-  addToDesktopItem.innerHTML = '<i>⬇️</i> <span>Auf Desktop ablegen</span>';
+  addToDesktopItem.innerHTML = '<i>⬇️</i> <span>Zu Desktop verschieben</span>';
   addToDesktopItem.onclick = () => {
     if (file.isFolder) {
       createDesktopFile(file.name, '', undefined, undefined, true, null, file.id);
@@ -1044,6 +1799,49 @@ function showFileContextMenu(e, file) {
       moving.parentId = targetFolderId;
       moving.updatedAt = new Date().toISOString();
       saveFiles(files);
+      state.clipboard = null;
+      if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
+      showNotification('Eingefügt');
+      menu.remove();
+      return;
+    }
+
+    if (!isDesktopEntry && state.clipboard.source === 'desktop') {
+      const desktopFiles = loadDesktopFiles();
+      const item = desktopFiles.find(f => f.id === state.clipboard.id);
+      if (!item) {
+        state.clipboard = null;
+        menu.remove();
+        return;
+      }
+
+      const targetFolderId = file.isFolder ? file.id : currentFolderId;
+      const filesAll = loadFiles();
+
+      if (item.isFolder) {
+        if (item.linkedFolderId) {
+          const movingFolder = filesAll.find(f => f.id === item.linkedFolderId);
+          if (movingFolder) {
+            movingFolder.parentId = targetFolderId;
+            movingFolder.updatedAt = new Date().toISOString();
+          }
+        } else {
+          createNewFile(item.name, '', true, targetFolderId);
+        }
+      } else {
+        if (item.linkedFileId) {
+          const movingFile = filesAll.find(f => f.id === item.linkedFileId);
+          if (movingFile) {
+            movingFile.parentId = targetFolderId;
+            movingFile.updatedAt = new Date().toISOString();
+          }
+        } else {
+          createNewFile(item.name, item.content || '', false, targetFolderId);
+        }
+      }
+
+      saveFiles(filesAll);
+      deleteDesktopFile(item.id);
       state.clipboard = null;
       if (window.redosFiles && typeof window.redosFiles.refresh === 'function') window.redosFiles.refresh();
       showNotification('Eingefügt');
@@ -1118,13 +1916,19 @@ function showFileContextMenu(e, file) {
   
   // Add all items to the menu
   if (isDesktopEntry) {
-    menu.append(openItem, cutItem);
+    menu.append(openItem);
+    menu.append(openWithFilesItem, openWithCoderItem);
+    if (!file.isFolder) menu.append(openWithEditorItem);
+    menu.append(cutItem, renameItem);
     if (state.clipboard?.action === 'cut') {
       menu.append(pasteItem);
     }
     menu.append(divider, deleteItem);
   } else {
-    menu.append(openItem, addToDesktopItem, cutItem);
+    menu.append(openItem);
+    menu.append(openWithFilesItem, openWithCoderItem);
+    if (!file.isFolder) menu.append(openWithEditorItem);
+    menu.append(addToDesktopItem, cutItem, renameItem);
     if (state.clipboard?.action === 'cut') {
       menu.append(pasteItem);
     }
@@ -1135,8 +1939,10 @@ function showFileContextMenu(e, file) {
   // Close menu when clicking outside
   setTimeout(() => {
     const closeMenu = (e) => {
-      // Ignore right-click release which often follows contextmenu
-      if (typeof e.button === 'number' && e.button === 2) return;
+      // Ignore context clicks (right click or ctrl/cmd click)
+      const isContextClick = (typeof e.button === 'number' && e.button === 2) ||
+        (typeof e.button === 'number' && e.button === 0 && (e.ctrlKey || e.metaKey));
+      if (isContextClick) return;
       if (!menu.contains(e.target)) {
         menu.remove();
         document.removeEventListener('mousedown', closeMenu, true);
@@ -1184,6 +1990,32 @@ function showNotification(message, duration = 2000) {
 function setupDesktopDropZone() {
   if (!windowArea) return;
 
+  const resolveDesktopFileFromEvent = (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('.desktop-file') : null;
+    if (!el) return null;
+    const id = el.dataset.fileId;
+    const files = state.desktopFiles && Array.isArray(state.desktopFiles) ? state.desktopFiles : loadDesktopFiles();
+    return files.find(f => f.id === id) || null;
+  };
+
+  windowArea.addEventListener('contextmenu', (e) => {
+    const file = resolveDesktopFileFromEvent(e);
+    if (!file) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showFileContextMenu(e, file);
+  }, true);
+
+  windowArea.addEventListener('mousedown', (e) => {
+    const isContextClick = e.button === 2 || (e.button === 0 && (e.ctrlKey || e.metaKey));
+    if (!isContextClick) return;
+    const file = resolveDesktopFileFromEvent(e);
+    if (!file) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showFileContextMenu(e, file);
+  }, true);
+
   // Global background context menu on desktop
   windowArea.addEventListener('contextmenu', (e) => {
     if (e.target !== windowArea) return;
@@ -1204,6 +2036,32 @@ function setupDesktopDropZone() {
   windowArea.addEventListener('drop', (e) => {
     e.preventDefault();
     windowArea.style.backgroundColor = '';
+
+    if (e.target !== windowArea) return;
+
+    const appData = e.dataTransfer.getData('application/x-redos-file');
+    if (appData) {
+      try {
+        const parsed = JSON.parse(appData);
+        if (parsed?.source === 'files' && parsed?.id) {
+          const files = loadFiles();
+          const entry = files.find(f => f.id === parsed.id);
+          if (entry) {
+            const rect = windowArea.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            if (entry.isFolder) {
+              createDesktopFile(entry.name, '', x, y, true, null, entry.id);
+            } else {
+              createDesktopFile(entry.name, entry.content || '', x, y, false, entry.id, null);
+            }
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+      return;
+    }
     
     const data = e.dataTransfer.getData('text/plain');
     if (data) {
@@ -1456,6 +2314,7 @@ function setupHelpMenu() {
 function arrangeWindows() {
   const windows = Object.values(state.windows);
   if (windows.length === 0) return;
+  if (!windowArea) return;
   
   const areaRect = windowArea.getBoundingClientRect();
   const cols = Math.ceil(Math.sqrt(windows.length));
@@ -1500,6 +2359,7 @@ function init() {
 }
 
 function openApp(app) {
+  if (!template || !windowArea) return;
   // Wenn Fenster bereits existiert und minimiert ist, wieder anzeigen
   if (state.windows[app.id]) {
     const win = state.windows[app.id];
@@ -1529,6 +2389,16 @@ function openApp(app) {
   } else if (app.id === 'settings') {
     frame.remove();
     renderSettingsApp(body);
+  } else if (app.id === 'editor') {
+    frame.remove();
+    const initial = state.openTarget?.appId === 'editor' ? state.openTarget.file : null;
+    state.openTarget = null;
+    renderEditorApp(body, initial);
+  } else if (app.id === 'coder') {
+    frame.remove();
+    const initial = state.openTarget?.appId === 'coder' ? state.openTarget : null;
+    state.openTarget = null;
+    renderCoderApp(body, initial);
   } else if (app.id === 'web-browser') {
     const toolbar = document.createElement('div');
     toolbar.className = 'browser-toolbar';
@@ -1612,6 +2482,10 @@ function closeWindow(appId) {
   }, 200);
 }
 
+function closeAll() {
+  Object.keys(state.windows).forEach(appId => closeWindow(appId));
+}
+
 function minimizeWindow(appId) {
   const win = state.windows[appId];
   if (!win) return;
@@ -1638,6 +2512,7 @@ function restoreWindow(appId) {
 function maximizeWindow(appId) {
   const win = state.windows[appId];
   if (!win) return;
+  if (!windowArea) return;
   
   if (win.classList.contains('maximized')) {
     win.classList.remove('maximized');
@@ -1661,6 +2536,7 @@ function maximizeWindow(appId) {
 }
 
 function focusWindow(win) {
+  if (!win || !windowArea) return;
   state.z += 1;
   win.style.zIndex = state.z;
   win.classList.add('focused');
@@ -1671,6 +2547,7 @@ function focusWindow(win) {
 }
 
 function randomizePosition(win) {
+  if (!windowArea) return;
   const areaRect = windowArea.getBoundingClientRect();
   const winWidth = win.offsetWidth || 800;
   const winHeight = win.offsetHeight || 600;
@@ -1692,6 +2569,7 @@ function randomizePosition(win) {
 
 function applyDraggable(win) {
   const head = win.querySelector('.window-head');
+  if (!head) return;
   let isDown = false;
   let startX = 0;
   let startY = 0;
@@ -1717,6 +2595,7 @@ function applyDraggable(win) {
     
     // Aktuelle Position des Fensters relativ zum windowArea
     const rect = win.getBoundingClientRect();
+    if (!windowArea) return;
     const areaRect = windowArea.getBoundingClientRect();
     startLeft = rect.left - areaRect.left;
     startTop = rect.top - areaRect.top;
@@ -1735,7 +2614,7 @@ function applyDraggable(win) {
     
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
-    
+    if (!windowArea) return;
     const areaRect = windowArea.getBoundingClientRect();
     const newLeft = startLeft + dx;
     const newTop = startTop + dy;
@@ -1787,6 +2666,7 @@ function applyResizable(win) {
     if (!isResizing) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
+    if (!windowArea) return;
     const areaRect = windowArea.getBoundingClientRect();
     const rect = win.getBoundingClientRect();
     const maxW = areaRect.width - (rect.left - areaRect.left) - 8;
@@ -2269,7 +3149,15 @@ function renderFilesApp(body) {
           renderFileList();
           return;
         }
-        openDialog({ mode: 'file', title: 'Datei bearbeiten', entry: file });
+        openFileWithApp(file);
+      });
+
+      // Rechtsklick Fallback (manche Browser/Trackpads)
+      fileItem.addEventListener('mousedown', (e) => {
+        if (e.button !== 2) return;
+        e.preventDefault();
+        e.stopPropagation();
+        showFileContextMenu(e, file);
       });
       
       // Context menu
@@ -2413,6 +3301,15 @@ function renderFilesApp(body) {
 
   // Global background context menu in file grid
   fileGrid.addEventListener('contextmenu', (e) => {
+    if (e.target !== fileGrid) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showBackgroundContextMenu(e, 'files');
+  });
+
+  // Fallback for trackpads/browsers where contextmenu is blocked
+  fileGrid.addEventListener('mousedown', (e) => {
+    if (e.button !== 2) return;
     if (e.target !== fileGrid) return;
     e.preventDefault();
     e.stopPropagation();
