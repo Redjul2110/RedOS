@@ -920,6 +920,64 @@ const MIN_WIDTH = 400;
 const MIN_HEIGHT = 300;
 const FILE_KEY = 'redos_files';
 const DESKTOP_FILES_KEY = 'redos_desktop_files';
+const SYSTEM_FOLDER_ID = 'folder-systemredos';
+const SYS_CORE_ID = 'sys-core-config';
+const SYS_DEFAULTS_ID = 'sys-defaults';
+const SYS_DISPLAY_ID = 'sys-display.cfg';
+const SYS_WINDOWMGR_ID = 'sys-windowmgr.cfg';
+const SYS_APPS_REGISTRY_ID = 'sys-apps.registry';
+const SYS_CLIPBOARD_ID = 'sys-clipboard.cfg';
+const SYSTEM_REQUIRED_IDS = [SYS_CORE_ID, SYS_DEFAULTS_ID, SYS_DISPLAY_ID, SYS_WINDOWMGR_ID, SYS_APPS_REGISTRY_ID, SYS_CLIPBOARD_ID];
+
+function showSystemBroken() {
+  state.systemBroken = true;
+  try {
+    redosDialog({
+      title: 'System kritisch beschädigt',
+      message: 'Zu viele Systemdateien wurden gelöscht. Das System kann nicht weiterlaufen.',
+      buttons: [
+        { label: 'Zurücksetzen', value: true, variant: 'primary' }
+      ]
+    }).then((v) => {
+      if (v === true) resetSystem();
+    });
+  } catch (e) {
+    alert('System beschädigt. Bitte System zurücksetzen.');
+  }
+}
+
+// Feature-Check Funktionen für einzelne Systemdateien
+function hasDisplaySystem() {
+  try {
+    return loadFiles().some(f => f.id === SYS_DISPLAY_ID);
+  } catch (e) {
+    return false;
+  }
+}
+
+function hasWindowManager() {
+  try {
+    return loadFiles().some(f => f.id === SYS_WINDOWMGR_ID);
+  } catch (e) {
+    return false;
+  }
+}
+
+function hasAppsRegistry() {
+  try {
+    return loadFiles().some(f => f.id === SYS_APPS_REGISTRY_ID);
+  } catch (e) {
+    return false;
+  }
+}
+
+function hasClipboardSystem() {
+  try {
+    return loadFiles().some(f => f.id === SYS_CLIPBOARD_ID);
+  } catch (e) {
+    return false;
+  }
+}
 
 // Cookie-Hilfsfunktionen
 function setCookie(name, value, days = 365) {
@@ -1326,28 +1384,82 @@ function createDesktopFile(name, content, x, y, isFolder = false, linkedFileId =
   files.push(file);
   saveDesktopFiles(files);
   state.desktopFiles = files;
+  // Ensure a corresponding file/folder exists in the Files-App under folder-desktop
+  try {
+    if (!isFolder) {
+      if (!file.linkedFileId) {
+        const created = createNewFile(name, content || '', false, 'folder-desktop');
+        file.linkedFileId = created.id;
+        saveDesktopFiles(files);
+      }
+    } else {
+      if (!file.linkedFolderId) {
+        const created = createNewFile(name, '', true, 'folder-desktop');
+        file.linkedFolderId = created.id;
+        saveDesktopFiles(files);
+      }
+    }
+  } catch (e) {
+    // ignore if createNewFile not available or fails
+  }
   renderDesktopFiles();
   return file;
 }
 
 function deleteDesktopFile(id) {
-  const files = loadDesktopFiles().filter(f => f.id !== id);
-  saveDesktopFiles(files);
-  state.desktopFiles = files;
+  const files = loadDesktopFiles();
+  const remaining = files.filter(f => f.id !== id);
+  // Remove linked files/folders in the Files-App when desktop entry is deleted
+  try {
+    const target = files.find(f => f.id === id);
+    if (target) {
+      const filesAll = loadFiles();
+      const idsToRemove = new Set();
+      if (target.linkedFileId) idsToRemove.add(target.linkedFileId);
+      if (target.linkedFolderId) idsToRemove.add(target.linkedFolderId);
+
+      if (idsToRemove.size) {
+        // Also remove children of linked folders
+        const byParent = new Map();
+        filesAll.forEach(f => {
+          const pid = f.parentId || 'root';
+          if (!byParent.has(pid)) byParent.set(pid, []);
+          byParent.get(pid).push(f);
+        });
+        const collect = (fid) => {
+          idsToRemove.add(fid);
+          const children = byParent.get(fid) || [];
+          children.forEach(ch => collect(ch.id));
+        };
+        Array.from(idsToRemove).forEach(id0 => collect(id0));
+
+        const updated = filesAll.filter(f => !idsToRemove.has(f.id));
+        saveFiles(updated);
+        // Deleting from Desktop doesn't break system - it's just removing shortcuts
+        // Individual system files breaking functionality is handled by feature-check functions
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  saveDesktopFiles(remaining);
+  state.desktopFiles = remaining;
   renderDesktopFiles();
 }
 
 function renderDesktopFiles() {
   if (!windowArea) return;
+  if (!hasDisplaySystem()) return; // Silent fail if display system missing
   
   // Entferne alte Desktop-Dateien (nicht Fenster)
   const existingFiles = windowArea.querySelectorAll('.desktop-file');
   existingFiles.forEach(el => el.remove());
   
-  const files = loadDesktopFiles();
-  state.desktopFiles = files;
+  const desktopFiles = loadDesktopFiles();
+  state.desktopFiles = desktopFiles;
   
-  files.forEach(file => {
+  desktopFiles.forEach(file => {
     const fileEl = document.createElement('div');
     fileEl.className = 'desktop-file';
     fileEl.dataset.fileId = file.id;
@@ -1413,6 +1525,24 @@ function applyDesktopFileDraggable(fileEl, file) {
   let startTop = 0;
   let lastSaveTime = 0;
   const SAVE_DEBOUNCE = 100; // Save at most every 100ms during drag
+  // Make desktop items draggable so they can be dropped into the Files-App
+  try {
+    fileEl.draggable = true;
+    fileEl.addEventListener('dragstart', (e) => {
+      try {
+        e.dataTransfer.setData('application/x-redos-file', JSON.stringify({ source: 'desktop', id: file.id }));
+        e.dataTransfer.setData('text/plain', JSON.stringify({ name: file.name, content: file.content }));
+        fileEl.style.opacity = '0.5';
+      } catch (err) {
+        // ignore
+      }
+    });
+    fileEl.addEventListener('dragend', () => {
+      fileEl.style.opacity = '1';
+    });
+  } catch (e) {
+    // ignore if drag unsupported
+  }
   
   // Select file on click
   fileEl.addEventListener('mousedown', (e) => {
@@ -1897,7 +2027,23 @@ function showFileContextMenu(e, file) {
       }
 
       const updatedFiles = files.filter(f => !idsToDelete.has(f.id));
-      saveFiles(updatedFiles);
+          // Count how many critical system files are being deleted
+          const deletedSystemFiles = Array.from(idsToDelete).filter(id => 
+            [SYS_CORE_ID, SYS_DEFAULTS_ID, SYS_DISPLAY_ID, SYS_WINDOWMGR_ID, SYS_APPS_REGISTRY_ID, SYS_CLIPBOARD_ID].includes(id)
+          );
+          
+          // Only show catastrophic failure if 4+ critical files deleted at once
+          if (deletedSystemFiles.length >= 4) {
+            saveFiles(updatedFiles);
+            showSystemBroken();
+            renderDock();
+            setupMenus();
+            renderDesktopFiles();
+          } else {
+            // Individual feature deletion - just save quietly
+            saveFiles(updatedFiles);
+            // Don't show error, features will gracefully degrade
+          }
 
     // Update the UI
     const fileGrid = document.querySelector('.file-grid');
@@ -1909,6 +2055,21 @@ function showFileContextMenu(e, file) {
         fileItem.remove();
       }
     }
+    // Remove any desktop entries linked to the deleted files/folders
+    try {
+      const desktopFiles = loadDesktopFiles();
+      const remaining = desktopFiles.filter(df => {
+        if (!df) return true;
+        if (df.linkedFileId && idsToDelete.has(df.linkedFileId)) return false;
+        if (df.linkedFolderId && idsToDelete.has(df.linkedFolderId)) return false;
+        return true;
+      });
+      if (remaining.length !== desktopFiles.length) {
+        saveDesktopFiles(remaining);
+        state.desktopFiles = remaining;
+        renderDesktopFiles();
+      }
+    } catch (e) { /* ignore */ }
 
     showNotification(`"${file.name}" wurde gelöscht`);
     menu.remove();
@@ -1989,6 +2150,7 @@ function showNotification(message, duration = 2000) {
 // Drag & Drop für Dateien aus der Dateien-App
 function setupDesktopDropZone() {
   if (!windowArea) return;
+  if (!hasClipboardSystem()) return; // Silent fail if clipboard system missing
 
   const resolveDesktopFileFromEvent = (e) => {
     const el = e.target && e.target.closest ? e.target.closest('.desktop-file') : null;
@@ -2080,6 +2242,8 @@ function setupDesktopDropZone() {
 
 // Menü-System
 function setupMenus() {
+  if (!hasWindowManager()) return; // Silent fail if window manager missing
+  
   setupFileMenu();
   setupEditMenu();
   setupViewMenu();
@@ -2337,6 +2501,33 @@ function arrangeWindows() {
 // Initialisierung
 function init() {
   // Setup wurde bereits geprüft, direkt initialisieren
+  
+  // Initialize system files on first run
+  try {
+    const files = loadFiles();
+    const hasSysFolder = files.some(f => f.id === SYSTEM_FOLDER_ID && f.isFolder);
+    if (!hasSysFolder) {
+      // First run: create system folder and files
+      const sysFolder = { id: SYSTEM_FOLDER_ID, name: 'System (redOS)', content: '', isFolder: true, parentId: 'root', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      files.push(sysFolder);
+      files.push({ id: SYS_CORE_ID, name: 'core.cfg', content: '{"version":"1.0","kernel":"redOS"}', isFolder: false, parentId: SYSTEM_FOLDER_ID, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      files.push({ id: SYS_DEFAULTS_ID, name: 'defaults.json', content: '{"theme":"dark","lang":"de"}', isFolder: false, parentId: SYSTEM_FOLDER_ID, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      files.push({ id: SYS_DISPLAY_ID, name: 'display.cfg', content: '{"resolution":"auto","scaling":1.0,"gpu_accel":true}', isFolder: false, parentId: SYSTEM_FOLDER_ID, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      files.push({ id: SYS_WINDOWMGR_ID, name: 'windowmgr.cfg', content: '{"enabled":true,"compositor":"native"}', isFolder: false, parentId: SYSTEM_FOLDER_ID, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      files.push({ id: SYS_APPS_REGISTRY_ID, name: 'apps.registry', content: '{"editor":"enabled","files":"enabled","coder":"enabled","settings":"enabled"}', isFolder: false, parentId: SYSTEM_FOLDER_ID, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      files.push({ id: SYS_CLIPBOARD_ID, name: 'clipboard.cfg', content: '{"enabled":true,"max_size":1048576}', isFolder: false, parentId: SYSTEM_FOLDER_ID, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      saveFiles(files);
+    }
+  } catch (e) { /* ignore */ }
+  
+  // Initialize system - each feature will gracefully degrade if its system file is missing
+  
+  // Apply background style based on display system status
+  const desktopBg = document.querySelector('.desktop-background');
+  if (desktopBg && !hasDisplaySystem()) {
+    desktopBg.style.background = '#000000';
+  }
+  
   renderDock();
   updateClock();
   setInterval(updateClock, 1000);
@@ -2359,6 +2550,29 @@ function init() {
 }
 
 function openApp(app) {
+  if (!hasAppsRegistry()) {
+    // Show system restore dialog when apps registry is missing
+    redosDialog({
+      title: 'System beschädigt',
+      message: 'Eine kritische Systemdatei fehlt.\n\nMöchtest du das System neu starten oder zurücksetzen?',
+      buttons: [
+        { label: 'Neu laden', value: 'reload', variant: 'primary' },
+        { label: 'Zurücksetzen', value: 'reset', variant: 'primary' }
+      ]
+    }).then((result) => {
+      if (result === 'reset') {
+        // Reset
+        deleteCookie('setup_completed');
+        deleteCookie('user_password_hash');
+        localStorage.clear();
+        location.reload();
+      } else if (result === 'reload') {
+        // Just reload
+        location.reload();
+      }
+    });
+    return;
+  }
   if (!template || !windowArea) return;
   // Wenn Fenster bereits existiert und minimiert ist, wieder anzeigen
   if (state.windows[app.id]) {
@@ -2688,6 +2902,17 @@ function applyResizable(win) {
 
 function renderDock() {
   if (!dock) return;
+  if (state.systemBroken) {
+    dock.innerHTML = '';
+    dock.style.display = 'none';
+    return;
+  }
+  // If window manager is missing, hide the dock/taskbar
+  if (!hasWindowManager()) {
+    dock.style.display = 'none';
+    return;
+  }
+  dock.style.display = '';
   dock.innerHTML = '';
   
   apps.forEach((app) => {
@@ -2821,6 +3046,10 @@ function renderFilesApp(body) {
   ensureSystemFolder('folder-downloads', 'Downloads');
   ensureSystemFolder('folder-home', 'Home');
   ensureSystemFolder('folder-computer', 'Computer');
+  ensureSystemFolder('folder-desktop', 'Desktop');
+  ensureSystemFolder(SYSTEM_FOLDER_ID, 'System (redOS)');
+
+  // Ensure core system files exist (only on first run) - moved to init()
   
   // Main container
   const app = document.createElement('div');
@@ -2835,6 +3064,9 @@ function renderFilesApp(body) {
   favoritesSection.className = 'sidebar-section';
   favoritesSection.innerHTML = `
     <h4>Favoriten</h4>
+    <div class="sidebar-item" data-folder-id="folder-desktop">
+      <i>🖥️</i> <span>Desktop</span>
+    </div>
     <div class="sidebar-item" data-folder-id="folder-documents">
       <i>📁</i> <span>Dokumente</span>
     </div>
@@ -3125,7 +3357,7 @@ function renderFilesApp(body) {
         <div class="file-name">${file.name}</div>
       `;
       
-      // Drag & Drop for desktop
+      // Drag & Drop for desktop -> start drag from Files view
       fileItem.addEventListener('dragstart', (e) => {
         e.dataTransfer.setData('text/plain', JSON.stringify({
           name: file.name,
@@ -3137,12 +3369,7 @@ function renderFilesApp(body) {
         }));
         fileItem.style.opacity = '0.5';
       });
-      
-      fileItem.addEventListener('dragend', () => {
-        fileItem.style.opacity = '1';
-      });
-      
-      // Double click to edit / open folder
+      fileItem.addEventListener('dragend', () => { fileItem.style.opacity = '1'; });
       fileItem.addEventListener('dblclick', () => {
         if (file.isFolder) {
           currentFolderId = file.id;
@@ -3190,7 +3417,7 @@ function renderFilesApp(body) {
         showFileContextMenu(e, file);
       });
       
-      fileGrid.append(fileItem);
+        fileGrid.append(fileItem);
 
       // Drop into folder (move)
       if (file.isFolder) {
@@ -3208,16 +3435,56 @@ function renderFilesApp(body) {
           if (!raw) return;
           try {
             const data = JSON.parse(raw);
-            if (data?.source !== 'files' || !data?.id) return;
-            if (data.id === file.id) return;
-            const filesAll = loadFiles();
-            const moving = filesAll.find(f => f.id === data.id);
-            if (!moving) return;
-            moving.parentId = file.id;
-            moving.updatedAt = new Date().toISOString();
-            saveFiles(filesAll);
-            renderFileList();
-            showNotification('Verschoben');
+            // Move from Files -> folder
+            if (data?.source === 'files' && data?.id) {
+              if (data.id === file.id) return;
+              const filesAll = loadFiles();
+              const moving = filesAll.find(f => f.id === data.id);
+              if (!moving) return;
+              moving.parentId = file.id;
+              moving.updatedAt = new Date().toISOString();
+              saveFiles(filesAll);
+              renderFileList();
+              showNotification('Verschoben');
+              return;
+            }
+
+            // Move from Desktop -> folder (drop desktop icon into this folder in Explorer)
+            if (data?.source === 'desktop' && data?.id) {
+              const desktopFiles = loadDesktopFiles();
+              const entry = desktopFiles.find(d => d.id === data.id);
+              if (!entry) return;
+              const filesAll = loadFiles();
+
+              if (entry.isFolder) {
+                if (entry.linkedFolderId) {
+                  const movingFolder = filesAll.find(f => f.id === entry.linkedFolderId);
+                  if (movingFolder) {
+                    movingFolder.parentId = file.id;
+                    movingFolder.updatedAt = new Date().toISOString();
+                  }
+                } else {
+                  createNewFile(entry.name, '', true, file.id);
+                }
+              } else {
+                if (entry.linkedFileId) {
+                  const movingFile = filesAll.find(f => f.id === entry.linkedFileId);
+                  if (movingFile) {
+                    movingFile.parentId = file.id;
+                    movingFile.updatedAt = new Date().toISOString();
+                  }
+                } else {
+                  createNewFile(entry.name, entry.content || '', false, file.id);
+                }
+              }
+
+              saveFiles(filesAll);
+              // remove desktop entry as it was moved into Files-App
+              deleteDesktopFile(entry.id);
+              renderFileList();
+              showNotification('Verschoben');
+              return;
+            }
           } catch (err) {
             // ignore
           }
@@ -3254,11 +3521,25 @@ function renderFilesApp(body) {
     }
 
     if (dialogMode === 'folder') {
-      createNewFile(name, '', true);
+      const created = createNewFile(name, '', true);
       showNotification(`Ordner "${name}" wurde erstellt`);
+      // If created under folder-desktop, also create a desktop folder entry
+      try {
+        const parent = created.parentId || currentFolderId;
+        if (parent === 'folder-desktop') {
+          createDesktopFile(created.name, '', undefined, undefined, true, null, created.id);
+        }
+      } catch (e) { /* ignore */ }
     } else {
-      createNewFile(name, content, false);
+      const created = createNewFile(name, content, false);
       showNotification(`Datei "${name}" wurde erstellt`);
+      // If created under folder-desktop, also create a desktop file entry
+      try {
+        const parent = created.parentId || currentFolderId;
+        if (parent === 'folder-desktop') {
+          createDesktopFile(created.name, created.content || '', undefined, undefined, false, created.id, null);
+        }
+      } catch (e) { /* ignore */ }
     }
     renderFileList();
   });
@@ -3292,6 +3573,50 @@ function renderFilesApp(body) {
   
   // Initial render
   renderFileList();
+  // Allow dragging over and dropping desktop items onto the file grid background (into currentFolderId)
+  fileGrid.addEventListener('dragover', (e) => { e.preventDefault(); });
+  fileGrid.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const raw = e.dataTransfer.getData('application/x-redos-file');
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      if (data?.source === 'desktop' && data?.id) {
+        const desktopFiles = loadDesktopFiles();
+        const entry = desktopFiles.find(d => d.id === data.id);
+        if (!entry) return;
+        const filesAll = loadFiles();
+        if (entry.isFolder) {
+          if (entry.linkedFolderId) {
+            const movingFolder = filesAll.find(f => f.id === entry.linkedFolderId);
+            if (movingFolder) {
+              movingFolder.parentId = currentFolderId;
+              movingFolder.updatedAt = new Date().toISOString();
+            }
+          } else {
+            createNewFile(entry.name, '', true, currentFolderId);
+          }
+        } else {
+          if (entry.linkedFileId) {
+            const movingFile = filesAll.find(f => f.id === entry.linkedFileId);
+            if (movingFile) {
+              movingFile.parentId = currentFolderId;
+              movingFile.updatedAt = new Date().toISOString();
+            }
+          } else {
+            createNewFile(entry.name, entry.content || '', false, currentFolderId);
+          }
+        }
+        saveFiles(filesAll);
+        deleteDesktopFile(entry.id);
+        renderFileList();
+        showNotification('Verschoben');
+      }
+    } catch (err) {
+      // ignore
+    }
+  });
+
 
   window.redosFiles = {
     openDialog,
@@ -3400,6 +3725,56 @@ window.setupPrevStep = setupPrevStep;
 window.setupCreatePassword = setupCreatePassword;
 window.setupComplete = setupComplete;
 
+// ==================== BIOS Functions (Global) ====================
+window.openBios = function openBios() {
+  alert('BIOS Button clicked - openBios called');
+  console.log('openBios called');
+  const biosOverlay = document.getElementById('biosOverlay');
+  console.log('biosOverlay element:', biosOverlay);
+  if (biosOverlay) {
+    console.log('Removing hidden class and setting display');
+    biosOverlay.classList.remove('hidden');
+    biosOverlay.style.display = 'flex';
+    console.log('Calling updateBiosStats');
+    try {
+      window.updateBiosStats();
+    } catch (e) {
+      console.error('Error in updateBiosStats:', e);
+    }
+  } else {
+    console.error('biosOverlay not found in DOM!');
+    alert('ERROR: biosOverlay element not found!');
+  }
+};
+
+window.closeBios = function closeBios() {
+  const biosOverlay = document.getElementById('biosOverlay');
+  if (biosOverlay) {
+    biosOverlay.classList.add('hidden');
+    biosOverlay.style.display = 'none';
+  }
+};
+
+window.updateBiosStats = function updateBiosStats() {
+  try {
+    const files = loadFiles();
+    const desktopFiles = loadDesktopFiles();
+    const storageSize = JSON.stringify(localStorage).length / 1024; // KB
+    
+    const el1 = document.getElementById('storageSize');
+    const el2 = document.getElementById('fileCount');
+    const el3 = document.getElementById('desktopCount');
+    const el4 = document.getElementById('systemStatus');
+    
+    if (el1) el1.textContent = Math.round(storageSize * 100) / 100;
+    if (el2) el2.textContent = files.length;
+    if (el3) el3.textContent = desktopFiles.length;
+    if (el4) el4.textContent = hasAppsRegistry() && hasDisplaySystem() ? 'OK' : 'DEGRADED';
+  } catch (e) {
+    console.error('Error updating BIOS stats:', e);
+  }
+};
+
 // Sicherstellen, dass Funktionen auch nach DOMContentLoaded verfügbar sind
 document.addEventListener('DOMContentLoaded', () => {
   const startupOverlay = document.getElementById('startupOverlay');
@@ -3459,4 +3834,305 @@ document.addEventListener('DOMContentLoaded', () => {
   window.setupComplete = setupComplete;
 
   startMainFlow();
+  
+  // ==================== BIOS System Setup ====================
+  
+  const biosBtn = document.getElementById('biosBtn');
+  const biosOverlay = document.getElementById('biosOverlay');
+  const biosClose = document.getElementById('biosClose');
+  
+  console.log('BIOS Setup - biosBtn:', biosBtn, 'biosOverlay:', biosOverlay);
+  
+  // Make functions global
+  window.openBios = openBios;
+  window.closeBios = closeBios;
+  
+  if (biosBtn) {
+    biosBtn.addEventListener('click', function(e) {
+      console.log('BIOS Button clicked!');
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('Calling openBios, biosOverlay:', biosOverlay);
+      openBios();
+    });
+  } else {
+    console.warn('biosBtn not found!');
+  }
+  
+  if (biosClose) {
+    biosClose.addEventListener('click', function(e) {
+      console.log('BIOS Close clicked');
+      e.preventDefault();
+      e.stopPropagation();
+      closeBios();
+    });
+  }
+  
+  // Close BIOS with ESC key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && biosOverlay && !biosOverlay.classList.contains('hidden')) {
+      closeBios();
+    }
+  });
+  
+  // BIOS Menu Navigation
+  document.querySelectorAll('.bios-menu-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      const section = e.target.dataset.section;
+      if (section) {
+        // Update active menu item
+        document.querySelectorAll('.bios-menu-item').forEach(m => m.classList.remove('active'));
+        e.target.classList.add('active');
+        
+        // Update active section
+        document.querySelectorAll('.bios-section').forEach(s => s.classList.remove('active'));
+        const sectionEl = document.getElementById(`section-${section}`);
+        if (sectionEl) sectionEl.classList.add('active');
+        
+        // Call section-specific init
+        if (section === 'recovery') initRecoverySection();
+        if (section === 'editor') initEditorSection();
+        if (section === 'storage') initStorageSection();
+      }
+    });
+  });
+  
+  // ==================== BIOS Functions ====================
+  
+  function initRecoverySection() {
+    // Get all deleted files from trash or backup
+    try {
+      const files = loadFiles();
+      const fileList = document.getElementById('recoveryFileList');
+      
+      // Show deletable system files that could be restored
+      const systemFiles = [
+        { id: SYS_CORE_ID, name: 'core.cfg', content: '{"version":"1.0","kernel":"redOS"}' },
+        { id: SYS_DEFAULTS_ID, name: 'defaults.json', content: '{}' },
+        { id: SYS_DISPLAY_ID, name: 'display.cfg', content: '{"enabled":true}' },
+        { id: SYS_WINDOWMGR_ID, name: 'windowmgr.cfg', content: '{"enabled":true}' },
+        { id: SYS_APPS_REGISTRY_ID, name: 'apps.registry', content: '{"editor":"enabled","files":"enabled","coder":"enabled","settings":"enabled"}' },
+        { id: SYS_CLIPBOARD_ID, name: 'clipboard.cfg', content: '{"enabled":true,"max_size":1048576}' }
+      ];
+      
+      let html = '';
+      systemFiles.forEach(sysFile => {
+        const exists = files.some(f => f.id === sysFile.id);
+        if (!exists) {
+          html += `
+            <div class="bios-file-item">
+              <span>${sysFile.name}</span>
+              <button class="bios-action-btn" onclick="window.restoreSystemFile('${sysFile.id}', '${sysFile.name.replace(/'/g, "\\'")}', '${sysFile.content.replace(/'/g, "\\'")}')">Restore</button>
+            </div>
+          `;
+        }
+      });
+      
+      if (!html) {
+        html = '<p class="muted">Alle Systemdateien sind vorhanden</p>';
+      }
+      fileList.innerHTML = html;
+    } catch (e) {
+      console.error('Error loading recovery files:', e);
+    }
+  }
+  
+  window.restoreSystemFile = function(id, name, content) {
+    try {
+      const files = loadFiles();
+      files.push({
+        id,
+        name,
+        content,
+        isFolder: false,
+        parentId: SYSTEM_FOLDER_ID,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      saveFiles(files);
+      showNotification(`${name} wurde wiederhergestellt`);
+      initRecoverySection();
+      updateBiosStats();
+      // Refresh system
+      location.reload();
+    } catch (e) {
+      showNotification('Fehler beim Wiederherstellen');
+    }
+  };
+  
+  function initEditorSection() {
+    try {
+      const files = loadFiles();
+      const select = document.getElementById('systemFileSelect');
+      const textarea = document.getElementById('codeEditor');
+      
+      // Clear and rebuild select
+      select.innerHTML = '<option value="">-- Wähle eine Systemdatei --</option>';
+      
+      const systemFiles = [
+        { id: SYS_CORE_ID, name: 'core.cfg' },
+        { id: SYS_DEFAULTS_ID, name: 'defaults.json' },
+        { id: SYS_DISPLAY_ID, name: 'display.cfg' },
+        { id: SYS_WINDOWMGR_ID, name: 'windowmgr.cfg' },
+        { id: SYS_APPS_REGISTRY_ID, name: 'apps.registry' },
+        { id: SYS_CLIPBOARD_ID, name: 'clipboard.cfg' }
+      ];
+      
+      systemFiles.forEach(sysFile => {
+        const file = files.find(f => f.id === sysFile.id);
+        if (file) {
+          const option = document.createElement('option');
+          option.value = file.id;
+          option.textContent = sysFile.name;
+          select.appendChild(option);
+        }
+      });
+      
+      // Handle file selection
+      select.addEventListener('change', (e) => {
+        if (e.target.value) {
+          const file = files.find(f => f.id === e.target.value);
+          textarea.value = file?.content || '';
+        } else {
+          textarea.value = '';
+        }
+      });
+    } catch (e) {
+      console.error('Error initializing editor:', e);
+    }
+  }
+  
+  window.saveCode = function() {
+    try {
+      const select = document.getElementById('systemFileSelect');
+      const textarea = document.getElementById('codeEditor');
+      
+      if (!select.value) {
+        showNotification('Wähle erst eine Datei aus');
+        return;
+      }
+      
+      const files = loadFiles();
+      const file = files.find(f => f.id === select.value);
+      if (file) {
+        file.content = textarea.value;
+        file.updatedAt = new Date().toISOString();
+        saveFiles(files);
+        showNotification('Änderungen gespeichert');
+      }
+    } catch (e) {
+      showNotification('Fehler beim Speichern');
+    }
+  };
+  
+  window.reloadCode = function() {
+    document.getElementById('codeEditor').value = '';
+    document.getElementById('systemFileSelect').value = '';
+    showNotification('Editor zurückgesetzt');
+  };
+  
+  function initStorageSection() {
+    try {
+      const files = loadFiles();
+      const storageSize = JSON.stringify(localStorage).length / 1024;
+      const filesSizeKb = JSON.stringify(files).length / 1024;
+      
+      const html = `
+        <p><strong>Total Storage:</strong> ${Math.round(storageSize * 100) / 100} KB</p>
+        <p><strong>Files Data:</strong> ${Math.round(filesSizeKb * 100) / 100} KB</p>
+        <p><strong>Files Count:</strong> ${files.length}</p>
+      `;
+      document.getElementById('storageDetails').innerHTML = html;
+    } catch (e) {
+      console.error('Error loading storage info:', e);
+    }
+  }
+  
+  window.clearCache = function() {
+    try {
+      // Clear browser cache by removing old files
+      const files = loadFiles();
+      const tempFiles = files.filter(f => f.name && f.name.startsWith('temp_'));
+      if (tempFiles.length > 0) {
+        const updated = files.filter(f => !f.name || !f.name.startsWith('temp_'));
+        saveFiles(updated);
+        showNotification('Cache geleert');
+      } else {
+        showNotification('Kein Cache zum Löschen');
+      }
+      initStorageSection();
+      updateBiosStats();
+    } catch (e) {
+      showNotification('Fehler beim Cache löschen');
+    }
+  };
+  
+  window.clearCookies = function() {
+    try {
+      // Clear all cookies
+      const cookies = document.cookie.split(';');
+      cookies.forEach(cookie => {
+        const eqPos = cookie.indexOf('=');
+        const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
+      });
+      showNotification('Cookies gelöscht');
+      initStorageSection();
+      updateBiosStats();
+    } catch (e) {
+      showNotification('Fehler beim Cookies löschen');
+    }
+  };
+  
+  window.compactStorage = function() {
+    try {
+      // Remove unnecessary data and optimize
+      const files = loadFiles();
+      // Keep only essential data
+      const essential = files.filter(f => !f.name || !f.name.startsWith('_temp'));
+      saveFiles(essential);
+      showNotification('Speicher optimiert');
+      initStorageSection();
+      updateBiosStats();
+    } catch (e) {
+      showNotification('Fehler beim Optimieren');
+    }
+  };
+  
+  window.softReset = function() {
+    redosConfirm('Wirklich einen Soft Reset machen? Dateien bleiben erhalten.', 'Soft Reset').then(ok => {
+      if (ok) {
+        // Keep files, reset only UI state
+        deleteCookie('user_password_hash');
+        state = {};
+        showNotification('Soft Reset durchgeführt');
+        setTimeout(() => location.reload(), 500);
+      }
+    });
+  };
+  
+  window.hardReset = function() {
+    redosConfirm('⚠️  Hard Reset löscht ALLE Daten! Fortfahren?', 'Hard Reset').then(ok => {
+      if (ok) {
+        deleteCookie('setup_completed');
+        deleteCookie('user_password_hash');
+        localStorage.clear();
+        location.reload();
+      }
+    });
+  };
+  
+  // Expose BIOS functions to window
+  window.openBios = openBios;
+  window.closeBios = closeBios;
+  window.updateBiosStats = updateBiosStats;
+  
+  document.getElementById('refreshStatsBtn')?.addEventListener('click', updateBiosStats);
+  document.getElementById('savecodeBtn')?.addEventListener('click', window.saveCode);
+  document.getElementById('reloadCodeBtn')?.addEventListener('click', window.reloadCode);
+  document.getElementById('clearCacheBtn')?.addEventListener('click', window.clearCache);
+  document.getElementById('clearCookiesBtn')?.addEventListener('click', window.clearCookies);
+  document.getElementById('compactStorageBtn')?.addEventListener('click', window.compactStorage);
+  document.getElementById('softResetBtn')?.addEventListener('click', window.softReset);
+  document.getElementById('hardResetBtn')?.addEventListener('click', window.hardReset);
 });

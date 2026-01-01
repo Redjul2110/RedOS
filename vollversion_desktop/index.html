@@ -25,8 +25,422 @@
       <div class="startup-progress">
         <div class="startup-progress-bar" id="startupProgressBar"></div>
       </div>
+      <button class="bios-btn" id="biosBtn" title="BIOS - Systemeinstellungen">BIOS</button>
     </div>
   </div>
+
+  <!-- BIOS Interface -->
+  <div class="bios-overlay" id="biosOverlay" style="display: none;">
+    <div class="bios-window">
+      <div class="bios-header">
+        <div class="bios-title">redOS BIOS Setup Utility</div>
+        <button class="bios-close" id="biosClose">✕</button>
+      </div>
+      <div class="bios-content">
+        <div class="bios-sidebar">
+          <div class="bios-menu-item active" data-section="system">System Information</div>
+          <div class="bios-menu-item" data-section="boot">Boot Options</div>
+          <div class="bios-menu-item" data-section="performance">Performance</div>
+          <div class="bios-menu-item" data-section="security">Security</div>
+          <div class="bios-menu-item" data-section="power">Power Management</div>
+          <div class="bios-menu-item" data-section="recovery">File Recovery</div>
+          <div class="bios-menu-item" data-section="editor">System Code Editor</div>
+          <div class="bios-menu-item" data-section="storage">Storage & Memory</div>
+          <div class="bios-menu-item" data-section="reset">System Reset</div>
+        </div>
+        <div class="bios-main">
+          <!-- System Information Section -->
+          <div class="bios-section active" id="section-system">
+            <h3>System Information</h3>
+            <div class="bios-grid">
+              <div class="bios-grid-item">
+                <label>BIOS Version:</label>
+                <span id="bios-version">RedOS BIOS v1.0.0</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>Build Date:</label>
+                <span id="bios-date">2025-12-31</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>CPU Model:</label>
+                <span id="cpu-model">WebCore Virtual CPU</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>CPU Speed:</label>
+                <span id="cpu-speed">3.2 GHz</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>Memory:</label>
+                <span id="memory-total">8 GB</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>Available Storage:</label>
+                <span id="storage-available">Loading...</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>System Time:</label>
+                <span id="system-time">--:--:--</span>
+              </div>
+              <div class="bios-grid-item">
+                <label>System Date:</label>
+                <span id="system-date">--/--/----</span>
+              </div>
+            </div>
+            <div class="bios-info">
+              <p><strong>OS:</strong> redOS Beta</p>
+              <p><strong>Storage:</strong> <span id="storageSize">0</span> KB</p>
+              <p><strong>Files:</strong> <span id="fileCount">0</span></p>
+              <p><strong>Desktop Items:</strong> <span id="desktopCount">0</span></p>
+              <p><strong>Status:</strong> <span id="systemStatus">OK</span></p>
+            </div>
+          </div>
+
+          <!-- File Recovery Section -->
+          <div class="bios-section" id="section-recovery">
+            <h3>Systemdateien Wiederherstellen</h3>
+            <div class="bios-info">
+              <p>Klicken Sie auf die Schaltfläche, um alle fehlenden Systemdateien wiederherzustellen:</p>
+              <button id="restoreAllSystemFiles" class="bios-btn" style="margin: 15px 0;">Alle Systemdateien wiederherstellen</button>
+              <div id="recovery-status" class="recovery-status"></div>
+            </div>
+          </div>
+          
+          <!-- Boot Options Section -->
+          <div class="bios-section" id="section-boot">
+            <h3>Boot Options</h3>
+            <div class="bios-grid">
+              <div class="bios-grid-item">
+                <label>Boot Mode:</label>
+                <select id="boot-mode" class="bios-select">
+                  <option value="uefi">UEFI</option>
+                  <option value="legacy">Legacy</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Secure Boot:</label>
+                <select id="secure-boot" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Fast Boot:</label>
+                <select id="fast-boot" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Boot Order:</label>
+                <div id="boot-order" class="bios-boot-order">
+                  <!-- Boot devices will be populated by JavaScript -->
+                </div>
+              </div>
+            </div>
+            <div class="bios-actions">
+              <button class="bios-btn" onclick="saveBootSettings()">Save Changes</button>
+              <button class="bios-btn" onclick="resetBootSettings()">Reset to Defaults</button>
+            </div>
+          </div>
+
+          <!-- Performance Section -->
+          <div class="bios-section" id="section-performance">
+            <h3>Performance Settings</h3>
+            <div class="bios-grid">
+              <div class="bios-grid-item">
+                <label>CPU Power Profile:</label>
+                <select id="cpu-profile" class="bios-select">
+                  <option value="power-saving">Power Saving</option>
+                  <option value="balanced" selected>Balanced</option>
+                  <option value="performance">Performance</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Turbo Boost:</label>
+                <select id="turbo-boost" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Memory Profile:</label>
+                <select id="memory-profile" class="bios-select">
+                  <option value="auto">Auto</option>
+                  <option value="xmp1">XMP Profile 1</option>
+                  <option value="xmp2">XMP Profile 2</option>
+                </select>
+              </div>
+            </div>
+            <div class="bios-actions">
+              <button class="bios-btn" onclick="savePerformanceSettings()">Save Changes</button>
+              <button class="bios-btn" onclick="resetPerformanceSettings()">Reset to Defaults</button>
+            </div>
+          </div>
+
+          <!-- Security Section -->
+          <div class="bios-section" id="section-security">
+            <h3>Security Settings</h3>
+            <div class="bios-grid">
+              <div class="bios-grid-item">
+                <label>Administrator Password:</label>
+                <button class="bios-btn" onclick="changeAdminPassword()">Change Password</button>
+              </div>
+              <div class="bios-grid-item">
+                <label>Secure Boot:</label>
+                <select id="secure-boot-mode" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>TPM Security:</label>
+                <select id="tpm-mode" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Secure Boot Mode:</label>
+                <select id="secure-boot-policy" class="bios-select">
+                  <option value="standard">Standard</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+            </div>
+            <div class="bios-actions">
+              <button class="bios-btn" onclick="saveSecuritySettings()">Save Changes</button>
+              <button class="bios-btn" onclick="resetSecuritySettings()">Reset to Defaults</button>
+            </div>
+          </div>
+
+          <!-- Power Management Section -->
+          <div class="bios-section" id="section-power">
+            <h3>Power Management</h3>
+            <div class="bios-grid">
+              <div class="bios-grid-item">
+                <label>Power Profile:</label>
+                <select id="power-profile" class="bios-select">
+                  <option value="power-saving">Power Saving</option>
+                  <option value="balanced" selected>Balanced</option>
+                  <option value="performance">Performance</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Sleep Mode:</label>
+                <select id="sleep-mode" class="bios-select">
+                  <option value="s3">S3 (Suspend to RAM)</option>
+                  <option value="s4">S4 (Hibernate)</option>
+                  <option value="s5">S5 (Soft Off)</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>Wake on LAN:</label>
+                <select id="wol-mode" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+              <div class="bios-grid-item">
+                <label>USB Power Share:</label>
+                <select id="usb-power-share" class="bios-select">
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+            </div>
+            <div class="bios-actions">
+              <button class="bios-btn" onclick="savePowerSettings()">Save Changes</button>
+              <button class="bios-btn" onclick="resetPowerSettings()">Reset to Defaults</button>
+            </div>
+          </div>
+
+          <!-- File Recovery Section -->
+          <div class="bios-section" id="section-recovery">
+            <h3>File Recovery</h3>
+            <div class="bios-info">
+              <p>Hier kannst du gelöschte Dateien anschauen und wiederherstellen.</p>
+            </div>
+            <div class="bios-file-list" id="recoveryFileList">
+              <p class="muted">Keine Dateien zum Wiederherstellen</p>
+            </div>
+          </div>
+
+          <!-- System Code Editor Section -->
+          <div class="bios-section" id="section-editor">
+            <h3>System Code Editor</h3>
+            <div class="bios-info">
+              <p>Bearbeite Systemdateien direkt:</p>
+            </div>
+            <style>
+              .bios-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 12px;
+                margin: 20px 0;
+              }
+              
+              .bios-grid-item {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 12px;
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 4px;
+              }
+              
+              .bios-grid-item label {
+                font-weight: 600;
+                margin-right: 10px;
+              }
+              
+              .bios-actions {
+                display: flex;
+                gap: 10px;
+                margin: 20px 0 0 0;
+                padding: 0;
+                width: 100%;
+              }
+              
+              .refresh-container {
+                margin: 0;
+                padding: 0;
+              }
+              
+              .bios-footer {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                padding: 10px 20px;
+                background: rgba(0, 0, 0, 0.8);
+                border-top: 1px solid #333;
+              }
+              
+              .footer-content {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                max-width: 1200px;
+                margin: 0 auto;
+              }
+              
+              .footer-content p {
+                margin: 0;
+                color: #aaa;
+                font-size: 12px;
+              }
+              
+              #refreshStatsBtn {
+                margin: 0 !important;
+                padding: 8px 16px;
+                background: #2c3e50;
+                border: 1px solid #3a4f66;
+              }
+              
+              #refreshStatsBtn:hover {
+                background: #34495e;
+                border-color: #4a90e2;
+              }
+              
+              .bios-section {
+                display: none;
+              }
+              
+              .bios-section.active {
+                display: block;
+              }
+              
+              .bios-menu-item {
+                padding: 10px 15px;
+                cursor: pointer;
+                border-left: 3px solid transparent;
+                transition: all 0.2s;
+              }
+              
+              .bios-menu-item:hover {
+                background: rgba(255, 255, 255, 0.1);
+              }
+              
+              .bios-menu-item.active {
+                background: rgba(0, 100, 255, 0.2);
+                border-left: 3px solid #4a90e2;
+              }
+              
+              .bios-btn {
+                background: #2c3e50;
+                border: 1px solid #3a4f66;
+                color: #ecf0f1;
+                padding: 8px 16px;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: all 0.2s;
+              }
+              
+              .bios-btn:hover {
+                background: #34495e;
+                border-color: #4a90e2;
+              }
+              
+              .bios-btn:active {
+                transform: translateY(1px);
+              }
+            </style>
+            <select id="systemFileSelect" class="bios-select">
+              <option value="">-- Wähle eine Systemdatei --</option>
+            </select>
+            <textarea id="codeEditor" class="bios-textarea" placeholder="Systemdatei Inhalt..."></textarea>
+            <button class="bios-action-btn" id="savecodeBtn">Save Changes</button>
+            <button class="bios-action-btn ghost" id="reloadCodeBtn">Reload Original</button>
+          </div>
+
+          <!-- Storage & Memory Section -->
+          <div class="bios-section" id="section-storage">
+            <h3>Storage & Memory</h3>
+            <div class="bios-info">
+              <div id="storageDetails"></div>
+            </div>
+            <button class="bios-action-btn" id="clearCacheBtn">Clear Cache</button>
+            <button class="bios-action-btn" id="clearCookiesBtn">Clear Cookies</button>
+            <button class="bios-action-btn" id="compactStorageBtn">Compact Storage</button>
+          </div>
+
+          <!-- System Reset Section -->
+          <div class="bios-section" id="section-reset">
+            <h3>System Reset</h3>
+            <div class="bios-info">
+              <p style="color: #ff3f30; font-weight: bold;">⚠️ Warnung: Diese Aktion kann nicht rückgängig gemacht werden!</p>
+              <p>Wähle eine Resetoption:</p>
+            </div>
+            <button class="bios-action-btn" id="softResetBtn">Soft Reset (Dateien behalten)</button>
+            <button class="bios-action-btn danger" id="hardResetBtn">Hard Reset (Alles löschen)</button>
+          </div>
+        </div>
+      </div>
+      <div class="bios-footer">
+        <div class="footer-content">
+          <button class="bios-btn" id="refreshStatsBtn" onclick="refreshSystemInfo()">Refresh Stats</button>
+          <p>Press ESC to exit BIOS | Änderungen werden automatisch gespeichert</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .bios-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #000000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      padding: 20px;
+      overflow: auto;
+    }
+  </style>
 
   <div class="redos-dialog-overlay hidden" id="redosDialogOverlay">
     <div class="redos-dialog glass" role="dialog" aria-modal="true" aria-labelledby="redosDialogTitle">
@@ -172,5 +586,6 @@
   </div>
 
   <script src="main.js"></script>
+  <script src="bios.js"></script>
 </body>
 </html>
